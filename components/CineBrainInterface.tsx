@@ -4,9 +4,9 @@ import { useState, useEffect, useMemo, useTransition } from "react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import ProjectDashboard from "./ProjectDashboard";
-import { createProjectAction, updateProjectAction, deleteProjectAction, addKitItemAction, updateKitItemAction, deleteKitItemAction } from "@/app/actions";
+import { createProjectAction, updateProjectAction, deleteProjectAction, addKitItemAction, updateKitItemAction, deleteKitItemAction, checkForUpdatesAction } from "@/app/actions";
 import { generateCineListPDF, type PDFItem } from "@/lib/pdf-generator";
-import { X, Layout, FileText, Camera, ShieldCheck, Lightbulb } from "lucide-react";
+import { X, Layout, FileText, Camera, ShieldCheck, Lightbulb, UserPlus, RefreshCw } from "lucide-react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { CATEGORIES, isCameraBody, getCameraColor } from "@/lib/inventory-utils";
 
@@ -95,10 +95,29 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
     // Modal State (Managed here for now)
     const [configEntry, setConfigEntry] = useState<InventoryEntry | null>(null);
     const [activeSheet, setActiveSheet] = useState<{
-        type: 'b-cam' | null;
+        type: 'b-cam' | 'invite' | null;
         itemName?: string;
         copyFromEntry?: InventoryEntry
     }>({ type: null });
+
+    const [lastSyncVersion, setLastSyncVersion] = useState<string>("");
+
+    // --- LIVE SYNC POLLING ---
+    useEffect(() => {
+        if (!activeProjectId) return;
+
+        const interval = setInterval(async () => {
+            const res = await checkForUpdatesAction(activeProjectId, lastSyncVersion);
+            if (res.changed) {
+                console.log("Remote changes detected, syncing...");
+                // Refresh the whole page via router to keep it simple and correct
+                router.refresh();
+                if (res.version) setLastSyncVersion(res.version);
+            }
+        }, 10000); // 10 seconds
+
+        return () => clearInterval(interval);
+    }, [activeProjectId, lastSyncVersion, router]);
 
     const [isAdminCatalogOpen, setIsAdminCatalogOpen] = useState(false);
 
@@ -448,6 +467,7 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
                     <ProjectMetadataPanel
                         project={activeProject}
                         onUpdateProject={handleUpdateProject}
+                        onInviteTeam={() => setActiveSheet({ type: 'invite' })}
                     />
                 </div>
 
@@ -488,7 +508,11 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
 
                 <div className="flex-1 overflow-hidden relative">
                     {activeMobileTab === 'info' && (
-                        <ProjectMetadataPanel project={activeProject} onUpdateProject={handleUpdateProject} />
+                        <ProjectMetadataPanel
+                            project={activeProject}
+                            onUpdateProject={handleUpdateProject}
+                            onInviteTeam={() => setActiveSheet({ type: 'invite' })}
+                        />
                     )}
                     {activeMobileTab === 'docs' && (
                         <DocumentsPanel project={activeProject} onExport={handleExport} />
@@ -577,6 +601,123 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
                 isOpen={isAdminCatalogOpen}
                 onClose={() => setIsAdminCatalogOpen(false)}
             />
+
+            {/* Invitation Modal */}
+            {activeSheet.type === 'invite' && (
+                <InvitationModal
+                    projectId={activeProjectId!}
+                    onClose={() => setActiveSheet({ type: null })}
+                />
+            )}
+        </div>
+    );
+}
+
+// --- SUBMODAL COMPONENT ---
+
+import { inviteUserAction, getProjectTeamAction } from "@/app/actions";
+
+function InvitationModal({ projectId, onClose }: { projectId: string, onClose: () => void }) {
+    const [email, setEmail] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [team, setTeam] = useState<any>(null);
+
+    useEffect(() => {
+        getProjectTeamAction(projectId).then(setTeam);
+    }, [projectId]);
+
+    const handleInvite = async () => {
+        if (!email.includes("@")) return;
+        setLoading(true);
+        const res = await inviteUserAction(projectId, email);
+        if (res.success) {
+            setEmail("");
+            // Refresh team list
+            const updatedTeam = await getProjectTeamAction(projectId);
+            setTeam(updatedTeam);
+        } else {
+            alert(res.error);
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in">
+            <div className="bg-white rounded-[32px] p-8 w-full max-w-lg shadow-2xl border border-[#E2E8F0]">
+                <div className="flex justify-between items-center mb-8">
+                    <div>
+                        <h2 className="text-2xl font-black uppercase tracking-tight text-[#1A1A1A]">Team Collaboration</h2>
+                        <p className="text-[#64748B] text-sm font-medium mt-1">Invite colleagues to edit this project list</p>
+                    </div>
+                    <button onClick={onClose} className="p-3 bg-[#F8FAFC] rounded-full text-[#64748B] hover:bg-gray-100 transition-colors"><X className="w-5 h-5" /></button>
+                </div>
+
+                <div className="space-y-6">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] ml-1">Invite by Email</label>
+                        <div className="flex gap-2">
+                            <input
+                                className="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#1A1A1A] outline-none transition-all text-[#1A1A1A] font-medium"
+                                placeholder="colleague@cinematography.com"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                            />
+                            <button
+                                onClick={handleInvite}
+                                disabled={loading}
+                                className="bg-[#1A1A1A] text-white px-8 rounded-2xl font-bold hover:bg-[#333] transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {loading ? <RefreshCw className="animate-spin w-4 h-4" /> : "INVITE"}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4 pt-4">
+                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] ml-1 border-b border-[#F1F5F9] pb-2">Active Collaborators</h3>
+                        <div className="max-h-[200px] overflow-y-auto space-y-3 pr-2 scrollbar-thin">
+                            {team?.members?.map((m: any) => (
+                                <div key={m.id} className="flex items-center justify-between p-4 bg-[#F8FAFC] rounded-2xl border border-[#F1F5F9]">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-[#1A1A1A] rounded-full flex items-center justify-center text-white font-bold text-xs">
+                                            {m.user?.name?.[0] || m.user?.email?.[0]}
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-bold text-[#1A1A1A]">{m.user?.name}</div>
+                                            <div className="text-[10px] text-[#64748B] font-medium">{m.user?.email}</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-[9px] font-black uppercase bg-white border border-[#E2E8F0] px-2 py-1 rounded-md text-[#64748B]">
+                                        {m.role}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {team?.invitations?.map((inv: any) => (
+                                <div key={inv.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-[#E2E8F0] border-dashed">
+                                    <div className="flex items-center gap-3 opacity-60">
+                                        <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold text-xs">
+                                            ?
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-bold text-gray-500">Pending...</div>
+                                            <div className="text-[10px] text-gray-400 font-medium">{inv.email}</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-[8px] font-black uppercase bg-blue-50 text-blue-600 px-2 py-1 rounded-md">
+                                        Invited
+                                    </div>
+                                </div>
+                            ))}
+
+                            {!team?.members && (
+                                <div className="text-center py-8 text-[#94A3B8] italic text-sm">
+                                    No collaborators yet. Start by inviting someone!
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

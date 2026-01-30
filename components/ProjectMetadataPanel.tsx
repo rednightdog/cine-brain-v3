@@ -4,9 +4,10 @@ import { ProjectWithItems } from './CineBrainInterface';
 interface ProjectMetadataPanelProps {
     project: ProjectWithItems;
     onUpdateProject: (id: string, data: any) => Promise<void>;
+    onInviteTeam?: () => void;
 }
 
-export function ProjectMetadataPanel({ project, onUpdateProject }: ProjectMetadataPanelProps) {
+export function ProjectMetadataPanel({ project, onUpdateProject, onInviteTeam }: ProjectMetadataPanelProps) {
     const [isEditing, setIsEditing] = useState(false);
 
     // Local state for form
@@ -32,12 +33,21 @@ export function ProjectMetadataPanel({ project, onUpdateProject }: ProjectMetada
         <div className="h-full flex flex-col bg-white border-r border-[#E5E5EA]">
             <div className="p-4 border-b border-[#E5E5EA] flex justify-between items-center bg-[#F2F2F7]/50">
                 <h2 className="text-[10px] font-black uppercase text-[#8E8E93] tracking-[0.1em]">Project Info</h2>
-                <button
-                    onClick={() => isEditing ? handleSave() : setIsEditing(true)}
-                    className="text-[10px] font-black uppercase text-[#007AFF] tracking-wider hover:opacity-70 transition-opacity"
-                >
-                    {isEditing ? 'Save' : 'Edit'}
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={onInviteTeam}
+                        className="flex items-center gap-1.5 text-[10px] font-black uppercase text-[#1A1A1A] bg-[#E2E8F0] px-3 py-1.5 rounded-full hover:bg-gray-200 transition-all shadow-sm"
+                    >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"></path></svg>
+                        Invite
+                    </button>
+                    <button
+                        onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+                        className="text-[10px] font-black uppercase text-[#007AFF] tracking-wider hover:opacity-70 transition-opacity"
+                    >
+                        {isEditing ? 'Save' : 'Edit'}
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-8">

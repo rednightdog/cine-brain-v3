@@ -3,9 +3,13 @@
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { researchEquipment, normalizeName } from "@/lib/catalog-research";
+import bcrypt from "bcryptjs";
+import { auth } from "@/auth";
 
 export async function createProjectAction(data: any) {
     try {
+        const session = await auth();
+
         const createData: any = {
             name: data.name,
             productionCo: data.productionCo,
@@ -18,6 +22,7 @@ export async function createProjectAction(data: any) {
             shootDates: data.shootDates,
             contactsJson: data.contactsJson,
             datesJson: data.datesJson,
+            userId: session?.user?.id || null // Link to owner
         };
 
         const newProject = await prisma.kit.create({
@@ -323,3 +328,100 @@ export async function verifyEquipmentAction(id: string) {
 }
 
 
+// --- AUTH & TEAM ACTIONS ---
+
+export async function registerUserAction(formData: FormData) {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    const name = formData.get("name") as string;
+
+    if (!email || !password) return { success: false, error: "Missing fields" };
+
+    try {
+        const existing = await prisma.user.findUnique({ where: { email } });
+        if (existing) return { success: false, error: "User already exists" };
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        await prisma.user.create({
+            data: {
+                email,
+                password: hashedPassword,
+                name: name || email.split("@")[0]
+            }
+        });
+
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function inviteUserAction(projectId: string, email: string) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const project = await prisma.kit.findUnique({
+            where: { id: projectId },
+            include: { team: true }
+        });
+
+        if (!project) return { success: false, error: "Project not found" };
+
+        // 1. Ensure project has a team
+        let teamId = project.teamId;
+        if (!teamId) {
+            const newTeam = await prisma.team.create({
+                data: {
+                    name: `Team for ${project.name}`,
+                    kits: { connect: { id: projectId } },
+                    members: {
+                        create: { userId: session.user.id, role: "OWNER" }
+                    }
+                }
+            });
+            teamId = newTeam.id;
+        }
+
+        // 2. Create invitation
+        const invitation = await prisma.invitation.create({
+            data: {
+                email,
+                teamId: teamId!,
+                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+            }
+        });
+
+        return { success: true, invitation };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function getProjectTeamAction(projectId: string) {
+    const project = await prisma.kit.findUnique({
+        where: { id: projectId },
+        include: {
+            team: {
+                include: {
+                    members: { include: { user: true } },
+                    invitations: { where: { accepted: false } }
+                }
+            }
+        }
+    });
+    return project?.team || null;
+}
+
+export async function checkForUpdatesAction(projectId: string, currentVersion: string) {
+    const project = await prisma.kit.findUnique({
+        where: { id: projectId },
+        select: { updatedAt: true }
+    });
+
+    if (!project) return { changed: false };
+
+    const lastUpdate = project.updatedAt.getTime().toString();
+    return { changed: lastUpdate !== currentVersion, version: lastUpdate };
+}

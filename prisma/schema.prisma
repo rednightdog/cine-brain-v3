@@ -76,6 +76,7 @@ model User {
   email     String   @unique
   password  String
   name      String?
+  image     String?
   jobTitle  String?
   role      String   @default("USER")
   language  String   @default("TR")
@@ -84,6 +85,7 @@ model User {
 
   kits      Kit[]
   equipment EquipmentItem[] @relation("UserEquipment")
+  teams     TeamMember[]
 }
 
 model Kit {
@@ -117,8 +119,45 @@ model Kit {
   datesJson       String?
   
   version         Int      @default(1)
-  // hierarchy for versions
   originalKitId   String?
+
+  team            Team?    @relation(fields: [teamId], references: [id])
+  teamId          String?
+}
+
+model Team {
+  id          String       @id @default(cuid())
+  name        String
+  kits        Kit[]
+  members     TeamMember[]
+  invitations Invitation[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      String   @default("MEMBER") // OWNER, ADMIN, MEMBER
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teamId, userId])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId    String
+  role      String   @default("MEMBER")
+  token     String   @unique @default(cuid())
+  expires   DateTime
+  accepted  Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model KitItem {
