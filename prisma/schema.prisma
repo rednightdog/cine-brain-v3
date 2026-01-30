@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model EquipmentItem {
+  id             String   @id @default(cuid())
+  name           String
+  brand          String
+  model          String
+  category       String   // CAM, LNS, SUP
+  subcategory    String?  // CAM: S35/FF/LF, LNS: Anamorphic/Spherical, SUP: Accessories/Filters/etc
+  subSubcategory String?  // Reserved for future use
+  coverage       String?  // For LNS: S35/FF/LF (sensor coverage)
+  description    String
+  daily_rate_est Int
+  
+  // Specs flattened
+  mount          String?
+  weight_kg      Float?
+  resolution     String?
+  focal_length   String?
+  aperture       String?
+  power_draw_w   Int?
+  sensor_size    String?  // For CAM: S35/FF/LF
+  sensor_type    String?
+  image_circle_mm Int?
+  
+  // Lens Fields
+  lens_type         String?  // Anamorphic, Spherical
+  close_focus_m     Float?
+  front_diameter_mm Int?
+  length_mm         Int?
+  squeeze           String?
+  sensor_coverage   String?  // Deprecated - use 'coverage' instead
+  
+  // JSON strings for complex data
+  recordingFormats String?
+  technicalData    String?
+  labMetrics       String?
+  specs_json       String?
+  dimensions_json  String?  // {length, width, height}
+
+  imageUrl       String?
+  payload_kg     Float?
+  
+  // AI & Admin Flags
+  isAIGenerated  Boolean  @default(false)
+  isVerified     Boolean  @default(false)
+  
+  // Ownership (Personal Inventory)
+  isPrivate      Boolean  @default(false)
+  ownerId        String?
+  owner          User?    @relation("UserEquipment", fields: [ownerId], references: [id])
+  serialNumber   String?  // For personal items
+  purchaseDate   DateTime?
+  personalNotes  String?  // User's private notes
+
+  // Catalog Hierarchy
+  parentId       String?
+  parent         EquipmentItem? @relation("CatalogHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children       EquipmentItem[] @relation("CatalogHierarchy")
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  kitItems       KitItem[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  jobTitle  String?
+  role      String   @default("USER")
+  language  String   @default("TR")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  kits      Kit[]
+  equipment EquipmentItem[] @relation("UserEquipment")
+}
+
+model Kit {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  isPublic       Boolean  @default(false)
+  shareToken     String?  @unique @default(cuid()) 
+  projectDetails String?
+  
+  owner          User?    @relation(fields: [ownerId], references: [id])
+  ownerId        String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  items          KitItem[]
+
+  // Project Metadata
+  productionCo    String?
+  producer        String?
+  director        String?
+  cinematographer String?
+  assistantCamera String?
+  rentalHouse     String?
+  testDates       String?
+  shootDates      String?
+  
+  // JSON storage for complex nested data (phones, emails, date ranges)
+  contactsJson    String?
+  datesJson       String?
+  
+  version         Int      @default(1)
+  // hierarchy for versions
+  originalKitId   String?
+}
+
+model KitItem {
+  id            String        @id @default(cuid())
+  kit           Kit           @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  kitId         String
+  
+  equipment     EquipmentItem? @relation(fields: [equipmentId], references: [id])
+  equipmentId   String?
+
+  customName        String?
+  customBrand       String?
+  customCategory    String?
+  customDescription String?
+  
+  notes         String?
+  quantity      Int           @default(1)
+  serialNumber  String? // Project-specific serial number
+  
+  // Organization
+  assignedCam   String        @default("A") // "A", "B", "C" etc.
+  orderIndex    Int           @default(0)
+  
+  // Custom Configuration (Format, Mount, Rialto choices)
+  configJson    String? // { "mount": "PL", "format": "X-OCN XT", "rialto": "Long Cable" }
+
+  // HIERARCHY SUPPORT (Requested Feature)
+  // Allows items (e.g., Rialto) to be nested under valid parents (e.g., Venice)
+  parentId      String?
+  parent        KitItem?      @relation("ItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children      KitItem[]     @relation("ItemHierarchy")
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

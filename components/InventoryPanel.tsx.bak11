@@ -1,0 +1,996 @@
+import React, { useState, useMemo } from 'react';
+import { InventoryEntry, InventoryItem } from './CineBrainInterface';
+import { Plus, X, Settings2, Minus } from 'lucide-react';
+import clsx from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { CATEGORIES, isCameraBody, getCameraColor, getCompatibleOptions } from '@/lib/inventory-utils';
+import { Search, Info, AlertTriangle, ShieldCheck, Check, AlertCircle } from 'lucide-react';
+import { validateCompatibility } from '@/lib/compatibility';
+import { researchEquipmentDraftAction, saveDraftsToCatalogAction } from '@/app/actions';
+import { LensGroupCard } from './ui/LensGroupCard';
+import { WarningBadge, WarningTooltip } from './ui/WarningBadge';
+import { getCompatibleAccessories } from '@/lib/camera-accessories';
+
+function cn(...inputs: (string | undefined | null | false)[]) {
+    return twMerge(clsx(inputs));
+}
+
+interface InventoryPanelProps {
+    inventory: InventoryEntry[];
+    catalog: InventoryItem[];
+    warnings: string[];
+    onAddItem: (item: InventoryItem, targetCam?: string) => void;
+    onUpdateItem: (id: string, updates: any) => void; // Used for config
+    onToggleOption: (entryIdx: number, childId: string) => void; // Requires idx unfortunately
+    onQtyChange: (entryIdx: number, delta: number) => void;
+    onSetConfigEntry: (entry: any) => void; // Opens modal
+    onOpenAdmin?: () => void;
+}
+
+export function InventoryPanel(props: InventoryPanelProps) {
+    const {
+        inventory,
+        catalog,
+        warnings,
+        onAddItem,
+        onToggleOption,
+        onQtyChange,
+        onSetConfigEntry,
+        onOpenAdmin
+    } = props;
+
+    // Local UI State
+    const [activeTab, setActiveTab] = useState("CAM");
+    const [cameraFilter, setCameraFilter] = useState<'ALL' | 'A' | 'B' | 'C'>('ALL');
+    const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isResearching, setIsResearching] = useState(false);
+    const [draftItems, setDraftItems] = useState<any[] | null>(null); // Drafts from AI (Array)
+    // Technical Filters - dynamic based on category
+    const [technicalFilter, setTechnicalFilter] = useState<string>('ALL');
+    const [lensTypeFilter, setLensTypeFilter] = useState<'ALL' | 'Anamorphic' | 'Spherical'>('ALL');
+    const [lensCoverageFilter, setLensCoverageFilter] = useState<'ALL' | 'S35' | 'FF' | 'LF'>('ALL');
+
+    // Replication State
+    const [replicationData, setReplicationData] = useState<{ items: InventoryItem[], primaryCam: string } | null>(null);
+    const [replicationTargets, setReplicationTargets] = useState<Set<string>>(new Set());
+
+    // Filter Logic
+    const sortedInventory = useMemo(() => {
+        return [...inventory].sort((a, b) => {
+            if (a.assignedCam !== b.assignedCam) return a.assignedCam.localeCompare(b.assignedCam);
+            const itemA = catalog.find(i => i.id === a.equipmentId);
+            const itemB = catalog.find(i => i.id === b.equipmentId);
+            const brandA = itemA?.brand?.toLowerCase() || '';
+            const brandB = itemB?.brand?.toLowerCase() || '';
+            if (brandA !== brandB) return brandA.localeCompare(brandB);
+            const modelA = itemA?.model?.toLowerCase() || itemA?.name?.toLowerCase() || '';
+            const modelB = itemB?.model?.toLowerCase() || itemB?.name?.toLowerCase() || '';
+            return modelA.localeCompare(modelB);
+        }).filter(entry => {
+            if (cameraFilter !== 'ALL' && entry.assignedCam !== cameraFilter) return false;
+            const item = catalog.find(i => i.id === entry.equipmentId);
+            return item?.category === activeTab;
+        });
+    }, [inventory, cameraFilter, activeTab, catalog]);
+
+    // Grouping logic for the Kit list (Selected Section)
+    const displayInventory = useMemo(() => {
+        if (activeTab !== 'LNS') {
+            return sortedInventory.map(entry => ({ type: 'item' as const, entry }));
+        }
+
+        const groups = new Map<string, {
+            assignedCam: string;
+            brand: string;
+            series: string;
+            entries: InventoryEntry[];
+        }>();
+
+        sortedInventory.forEach(entry => {
+            const item = catalog.find(i => i.id === entry.equipmentId);
+            if (!item) return;
+
+            const series = item.model || item.name.replace(/\s*\d+\s*mm.*/gi, '').trim();
+            const key = `${entry.assignedCam}-${item.brand}-${series}`;
+
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    assignedCam: entry.assignedCam,
+                    brand: item.brand || '',
+                    series,
+                    entries: []
+                });
+            }
+            groups.get(key)!.entries.push(entry);
+        });
+
+        return Array.from(groups.values()).map(g => ({ type: 'group' as const, ...g })).sort((a, b) => {
+            if (a.brand !== b.brand) return a.brand.localeCompare(b.brand);
+            return a.series.localeCompare(b.series);
+        });
+    }, [sortedInventory, activeTab, catalog]);
+
+    // Derived: Active Cameras
+    const activeCameras = useMemo(() => {
+        const cams = new Set<string>();
+        inventory.forEach(i => cams.add(i.assignedCam));
+        return Array.from(cams).sort();
+    }, [inventory]);
+
+    const showSmartTabs = activeCameras.length > 1;
+
+    // Helper wrapper to close modal on add
+    const handleAddWrapper = (item: InventoryItem) => {
+        handleSmartAdd([item]);
+    };
+
+    const handleSmartAdd = (items: InventoryItem[]) => {
+        const primaryCam = cameraFilter !== 'ALL' ? cameraFilter : undefined;
+        const otherCams = activeCameras.filter(c => c !== (primaryCam || 'A'));
+
+        // Bodies are never replicated. Single items or sets go through replication if other cams exist.
+        const isBody = items.length === 1 && isCameraBody(items[0]);
+        if (isBody || otherCams.length === 0) {
+            items.forEach(i => onAddItem(i, primaryCam));
+            setIsCatalogOpen(false);
+            return;
+        }
+
+        // Show Replication Modal - Default to first target cam if multiple exist
+        setReplicationData({ items, primaryCam: primaryCam || 'A' });
+        setReplicationTargets(new Set()); // Start empty
+    };
+
+    const confirmReplication = (shouldReplicate: boolean) => {
+        if (!replicationData) return;
+        const { items, primaryCam } = replicationData;
+
+        // 1. Add to Primary
+        items.forEach(i => onAddItem(i, primaryCam));
+
+        // 2. Add to Targets
+        if (shouldReplicate) {
+            replicationTargets.forEach(cam => {
+                items.forEach(i => onAddItem(i, cam));
+            });
+        }
+        setReplicationData(null);
+        setIsCatalogOpen(false);
+    };
+
+    // AI Search Logic
+    const searchSuggestions = useMemo(() => {
+        if (!searchQuery.trim()) return [];
+
+        const matches = catalog.filter(i =>
+            i.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            i.category.toLowerCase().includes(searchQuery.toLowerCase())
+        ).slice(0, 5);
+
+        if (matches.length === 0) {
+            return [];
+        }
+        return matches;
+    }, [searchQuery, catalog]);
+
+    const handleSearchSubmit = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (!searchQuery.trim()) return;
+
+        // Check for EXACT match
+        const exactMatch = searchSuggestions.find(s => s.name.toLowerCase() === searchQuery.toLowerCase());
+
+        if (exactMatch) {
+            onAddItem(exactMatch as any);
+            setSearchQuery("");
+        } else if (searchSuggestions.length > 0) {
+            // Partial matches exist -> Do nothing, just show the list
+            // User can click if they want one of those.
+            return;
+        } else {
+            // No matches -> Autonomous AI Research (Draft Mode)
+            setIsResearching(true);
+            const res = await researchEquipmentDraftAction(searchQuery);
+            setIsResearching(false);
+
+            if (res.success && res.drafts) {
+                setDraftItems(res.drafts);
+            } else {
+                alert(res.error || "Could not research this item.");
+            }
+        }
+    };
+
+    // Handler when user confirms AI suggestion
+    const handleConfirmDraft = async () => {
+        if (!draftItems) return;
+
+        // Filter only selected items
+        const selected = draftItems.filter(i => i._selected !== false);
+        if (selected.length === 0) return;
+
+        setIsResearching(true);
+        // Save selected drafts
+        const res = await saveDraftsToCatalogAction(selected);
+        setIsResearching(false);
+
+        if (res.success) {
+            // Optimistic update or just rely on server revalidate
+            setDraftItems(null);
+            setSearchQuery("");
+            // Optionally add to kit immediately? 
+            // Only if single item? For bulk, just add to catalog.
+            // onAddItem(res.item); // Removed immediate adding for bulk safety
+            alert(`Added ${res.count} items to catalog!`);
+        } else {
+            alert("Failed to save: " + res.error);
+        }
+    };
+
+    // Compatibility Checks
+    const compatibilityWarnings = useMemo(() => {
+        return validateCompatibility(inventory, catalog);
+    }, [inventory, catalog]);
+
+    return (
+        <div className="h-full flex flex-col bg-white overflow-hidden relative">
+            {/* Top Search Removed - Moved to Add Item Modal */}
+            {/* Header / Tabs */}
+            <div className="bg-white/95 backdrop-blur border-b border-[#E5E5EA] flex-none z-10">
+                <div className="flex justify-between items-center px-4 py-3">
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-black uppercase tracking-tight">Equipment</h2>
+                        {onOpenAdmin && (
+                            <button
+                                onClick={onOpenAdmin}
+                                className="p-1 hover:bg-[#F2F2F7] rounded-md transition-all text-[#C7C7CC] hover:text-[#007AFF]"
+                                title="Global Catalog Admin"
+                            >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Camera Filters (Smart Tabs) */}
+                    {showSmartTabs && (
+                        <div className="flex items-center bg-[#F2F2F7] p-0.5 rounded-lg">
+                            {['ALL', ...activeCameras].map(cam => (
+                                <button
+                                    key={cam}
+                                    onClick={() => setCameraFilter(cam as any)}
+                                    className={cn(
+                                        "px-2 py-0.5 text-[10px] font-bold rounded-md transition-all",
+                                        cameraFilter === cam
+                                            ? "bg-white shadow text-black"
+                                            : "text-[#8E8E93] hover:text-[#1C1C1E]"
+                                    )}
+                                >
+                                    {cam === 'ALL' ? 'ALL' : `CAM ${cam}`}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Categories */}
+                <div className="flex px-4 gap-6 border-b border-transparent">
+                    {CATEGORIES.map(cat => (
+                        <button
+                            key={cat.id}
+                            onClick={() => setActiveTab(cat.id)}
+                            className={cn(
+                                "pb-2 text-[11px] font-bold tracking-wider uppercase transition-all relative top-[1px] outline-none focus:outline-none",
+                                activeTab === cat.id ? "text-black border-b-2 border-black" : "text-[#C7C7CC]"
+                            )}
+                        >
+                            {cat.name}
+                        </button>
+                    ))}
+                </div>
+
+
+            </div>
+
+            {/* Warnings Bar */}
+            {warnings.length > 0 && (
+                <div className="bg-amber-50 border-b border-amber-200 p-2 px-4 flex-none">
+                    {warnings.map((w, i) => (
+                        <div key={i} className="text-xs font-medium text-amber-800 flex items-center">
+                            ⚠️ {w}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Main List */}
+            <div className="flex-1 overflow-y-auto bg-gray-50/30 pb-20">
+                {sortedInventory.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center pt-32 opacity-40">
+                        <div className="text-4xl mb-2">📹</div>
+                        <p className="text-xs font-bold uppercase">List is Empty</p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-[#E5E5EA]">
+                        {displayInventory.map((itemValue) => {
+                            if (itemValue.type === 'group') {
+                                const { brand, series, entries, assignedCam } = itemValue;
+                                const sampleItem = catalog.find(i => i.id === entries[0].equipmentId);
+                                const primaryAperture = sampleItem?.aperture || sampleItem?.name.match(/[TF]\d+(\.\d+)?/i)?.[0] || '';
+
+                                return (
+                                    <div key={`${assignedCam}-${brand}-${series}`} className="group flex flex-col py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7]">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-4 overflow-hidden">
+                                                <div className={cn(
+                                                    "w-6 h-6 flex items-center justify-center rounded-[6px] text-xs font-black shrink-0 text-white shadow-sm",
+                                                    getCameraColor(assignedCam)
+                                                )}>
+                                                    {assignedCam}
+                                                </div>
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-[14px] font-bold leading-tight text-[#1C1C1E]">
+                                                        {brand} {series} {primaryAperture}
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
+                                                        {entries.map(entry => {
+                                                            const i = catalog.find(catI => catI.id === entry.equipmentId);
+                                                            if (!i) return null;
+                                                            const mm = i.name.match(/\d+mm/i)?.[0];
+                                                            const ap = i.aperture || i.name.match(/[TF]\d+(\.\d+)?/i)?.[0];
+                                                            const isDiff = ap && ap !== primaryAperture;
+                                                            const masterIdx = inventory.findIndex(inv => inv.id === entry.id);
+
+                                                            return (
+                                                                <div key={entry.id} className="flex items-center gap-1 group/badge bg-[#F2F2F7] hover:bg-[#E5E5EA] px-2 py-0.5 rounded-md transition-all border border-transparent hover:border-[#D1D1D6]">
+                                                                    <span className="text-[10px] text-[#1C1C1E] font-bold">
+                                                                        {mm}{isDiff ? ` (${ap})` : ''}
+                                                                        {entry.quantity > 1 && <span className="ml-1 text-[#007AFF]">x{entry.quantity}</span>}
+                                                                    </span>
+                                                                    <button
+                                                                        onClick={() => onQtyChange(masterIdx, -entry.quantity)}
+                                                                        className="text-[#8E8E93] hover:text-red-500 transition-colors ml-0.5"
+                                                                        title="Remove from set"
+                                                                    >
+                                                                        <X className="w-2.5 h-2.5" />
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            const { entry } = itemValue;
+                            const item = catalog.find(i => i.id === entry.equipmentId);
+                            if (!item) return null;
+                            const masterIdx = inventory.findIndex(i => i.id === entry.id);
+
+                            return (
+                                <>
+                                <div key={entry.id} className="group flex items-center justify-between py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7]">
+                                    <div className="flex items-center gap-4 overflow-hidden">
+                                        <div className={cn(
+                                            "w-6 h-6 flex items-center justify-center rounded-[6px] text-xs font-black shrink-0 text-white shadow-sm",
+                                            getCameraColor(entry.assignedCam)
+                                        )}>
+                                            {entry.assignedCam}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <div className="flex items-center gap-2 overflow-hidden mr-1">
+                                                <span className="text-[14px] font-bold leading-tight text-[#1C1C1E]">
+                                                    {item.name}
+                                                </span>
+                                                {item.isAIGenerated && (
+                                                    <div className="p-0.5 bg-blue-50 rounded" title="AI Researched">
+                                                        <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {/* Lens Specs: Diameter & Weight */}
+                                            {item.category === 'LNS' && (
+                                                <div className="flex items-center gap-2 text-[9px] text-[#8E8E93] font-medium mt-0.5">
+                                                    {item.front_diameter_mm && (
+                                                        <span>⌀ {item.front_diameter_mm}mm</span>
+                                                    )}
+                                                    {item.weight_kg && (
+                                                        <span>• {item.weight_kg}kg</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {/* Camera Weight */}
+                                            {item.category === 'CAM' && item.weight_kg && (
+                                                <div className="flex items-center gap-2 text-[9px] text-[#8E8E93] font-medium mt-0.5">
+                                                    <span>{item.weight_kg}kg</span>
+                                                </div>
+                                            )}
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-[10px] text-[#8E8E93] uppercase font-black tracking-wider">
+                                                    {item.subcategory || item.category}
+                                                </span>
+                                                {/* Compatibility Warnings with Tooltip */}
+                                                {(() => {
+                                                    const itemWarnings = compatibilityWarnings.filter(w => w.itemId === entry.id);
+                                                    if (itemWarnings.length === 0) return null;
+
+                                                    return (
+                                                        <WarningTooltip warnings={itemWarnings.map(w => ({ type: w.type, message: w.message, suggestedAdapters: w.suggestedAdapters }))}>
+                                                            <div className="flex gap-1">
+                                                                {itemWarnings.map((w, idx) => (
+                                                                    <WarningBadge key={idx} type={w.type} message={w.message} compact />
+                                                                ))}
+                                                            </div>
+                                                        </WarningTooltip>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        {/* Config Toggle */}
+                                        {isCameraBody(item) && (
+                                            <button
+                                                onClick={() => onSetConfigEntry(entry)}
+                                                className="p-2 hover:bg-[#F2F2F7] rounded-full transition-all text-[#8E8E93] hover:text-[#007AFF]"
+                                                title="Configure"
+                                            >
+                                                <Settings2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+
+                                        {/* Action Pills */}
+                                        <div className="flex items-center bg-[#F2F2F7] rounded-[10px] p-0.5 h-8">
+                                            <button
+                                                onClick={() => onQtyChange(masterIdx, -1)}
+                                                className="w-7 h-7 flex items-center justify-center rounded-[8px] hover:bg-white hover:shadow-sm transition-all text-[#1C1C1E] disabled:opacity-30"
+                                                disabled={entry.quantity <= 1}
+                                            >
+                                                <Minus className="w-3.5 h-3.5" />
+                                            </button>
+                                            <span className="w-8 text-center text-[13px] font-black text-[#1C1C1E] tabular-nums">
+                                                {entry.quantity}
+                                            </span>
+                                            <button
+                                                onClick={() => onQtyChange(masterIdx, 1)}
+                                                className="w-7 h-7 flex items-center justify-center rounded-[8px] hover:bg-white hover:shadow-sm transition-all text-[#1C1C1E]"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+
+                                        <button
+                                            onClick={() => onQtyChange(masterIdx, -entry.quantity)}
+                                            className="p-2 hover:bg-red-50 rounded-full transition-all text-[#C7C7CC] hover:text-red-500"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                {item.category === 'CAM' && (() => {
+                                    const accessories = getCompatibleAccessories(item.id);
+                                    if (accessories.length === 0) return null;
+
+                                    return (
+                                        <div className="ml-14 mt-1 mb-2 flex flex-wrap gap-1.5">
+                                            {accessories.map(acc => (
+                                                <button
+                                                    key={acc.id}
+                                                    onClick={() => {
+                                                        const accItem = catalog.find(c => c.id === acc.id) || acc as any;
+                                                        onAddItem(accItem, entry.assignedCam);
+                                                    }}
+                                                    className="px-2 py-0.5 text-[8px] font-semibold bg-[#F2F2F7] text-[#8E8E93] rounded border border-transparent hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 transition-all"
+                                                    title={acc.description}
+                                                >
+                                                    + {acc.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                });
+                                </>
+                            );
+                            );
+                        })}
+                    </div>
+                )}
+
+                <button
+                    onClick={() => setIsCatalogOpen(true)}
+                    className="mx-3 mt-4 w-[calc(100%-24px)] py-3 border border-dashed border-[#C6C6C8] rounded-lg text-[#8E8E93] text-[10px] font-bold uppercase hover:bg-[#F2F2F7] transition-all mb-8"
+                >
+                    + Add Item
+                </button>
+            </div>
+
+            {/* Catalog Modal (Ported) */}
+            {isCatalogOpen && (
+                <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/30 backdrop-blur-[2px] animate-in fade-in">
+                    <div className="bg-[#F2F2F7] w-full h-[95%] rounded-t-[16px] overflow-hidden shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300">
+                        <div className="sticky top-0 z-20 bg-white border-b border-[#E5E5EA]">
+                            <div className="flex justify-between items-center p-3">
+                                <h2 className="font-bold text-sm text-[#1C1C1E]">Add Equipment</h2>
+                                <button onClick={() => setIsCatalogOpen(false)} className="w-7 h-7 flex items-center justify-center bg-[#E5E5EA] rounded-full text-gray-500 font-bold text-sm hover:bg-[#8E8E93] hover:text-white transition-colors">×</button>
+                            </div>
+                            {/* In-Modal Search */}
+                            <div className="px-3 pb-3">
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8E8E93]" />
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder={`Search ${CATEGORIES.find(c => c.id === activeTab)?.name || 'Catalog'}...`}
+                                        className="w-full bg-[#F2F2F7] border-none rounded-xl py-2 pl-9 pr-4 text-xs font-bold focus:ring-1 focus:ring-[#007AFF] placeholder-[#8E8E93]"
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Sub-Filters - Dynamic based on category */}
+                        <div className="flex flex-col gap-2 px-4 py-2 bg-[#F9F9F9]/50 border-b border-[#E5E5EA]">
+                            {/* CAMERA FILTERS: S35, FF, LF */}
+                            {activeTab === 'CAM' && (
+                                <div className="flex gap-2">
+                                    {['ALL', 'S35', 'FF', 'LF'].map(f => (
+                                        <button
+                                            key={f}
+                                            onClick={() => setTechnicalFilter(f)}
+                                            className={cn(
+                                                "px-2 py-1 rounded-full text-[9px] font-bold border transition-all",
+                                                technicalFilter === f
+                                                    ? "bg-black text-white border-black"
+                                                    : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
+                                            )}
+                                        >
+                                            {f}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* LENS FILTERS: Type + Coverage */}
+                            {activeTab === 'LNS' && (
+                                <>
+                                    <div className="flex gap-2 items-center">
+                                        <span className="text-[8px] font-bold text-[#8E8E93] uppercase">Type:</span>
+                                        {['ALL', 'Anamorphic', 'Spherical', 'Zoom'].map(f => (
+                                            <button
+                                                key={f}
+                                                onClick={() => setLensTypeFilter(f as any)}
+                                                className={cn(
+                                                    "px-2 py-1 rounded-full text-[9px] font-bold border transition-all",
+                                                    lensTypeFilter === f
+                                                        ? "bg-black text-white border-black"
+                                                        : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
+                                                )}
+                                            >
+                                                {f}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2 items-center">
+                                        <span className="text-[8px] font-bold text-[#8E8E93] uppercase">Coverage:</span>
+                                        {['ALL', 'S35', 'FF', 'LF'].map(f => (
+                                            <button
+                                                key={f}
+                                                onClick={() => setLensCoverageFilter(f as any)}
+                                                className={cn(
+                                                    "px-2 py-1 rounded-full text-[9px] font-bold border transition-all",
+                                                    lensCoverageFilter === f
+                                                        ? "bg-black text-white border-black"
+                                                        : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
+                                                )}
+                                            >
+                                                {f}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* SUPPORT FILTERS: Subcategories */}
+                            {activeTab === 'SUP' && (
+                                <div className="flex gap-1 flex-wrap">
+                                    {['ALL', 'Accessories', 'Batteries', 'Media', 'Filters', 'Matte Box', 'Follow Focus', 'Wireless Control', 'Monitors', 'Transmitters'].map(f => (
+                                        <button
+                                            key={f}
+                                            onClick={() => setTechnicalFilter(f)}
+                                            className={cn(
+                                                "px-2 py-1 rounded-full text-[9px] font-bold border transition-all",
+                                                technicalFilter === f
+                                                    ? "bg-black text-white border-black"
+                                                    : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
+                                            )}
+                                        >
+                                            {f}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* LIGHT FILTERS: Subcategories */}
+                            {activeTab === 'LIT' && (
+                                <div className="flex gap-1 flex-wrap">
+                                    {['ALL', 'LED', 'Daylight', 'Tungsten', 'Ballast', 'Modifier', 'Accessory'].map(f => (
+                                        <button
+                                            key={f}
+                                            onClick={() => setTechnicalFilter(f)}
+                                            className={cn(
+                                                "px-2 py-1 rounded-full text-[9px] font-bold border transition-all",
+                                                technicalFilter === f
+                                                    ? "bg-black text-white border-black"
+                                                    : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
+                                            )}
+                                        >
+                                            {f}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-2 space-y-4">
+                            {/* Explicit AI Research Trigger if search is active */}
+                            {searchQuery.trim().length > 1 && (
+                                <button
+                                    onClick={async () => {
+                                        setIsResearching(true);
+                                        const res = await researchEquipmentDraftAction(searchQuery);
+                                        setIsResearching(false);
+                                        if (res.success && res.drafts) setDraftItems(res.drafts);
+                                        else alert(res.error || "Could not research this item.");
+                                    }}
+                                    className="w-full flex items-center p-3 mb-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg active:scale-[0.99] transition-all text-left group border border-blue-100/50 hover:border-blue-200 shadow-sm"
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
+                                        <ShieldCheck className="w-4 h-4 text-blue-600" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="font-bold text-xs text-blue-900">"{searchQuery}" Not in Catalog?</div>
+                                        <div className="text-[9px] text-blue-500/80 font-medium">Use AI to find and add it</div>
+                                    </div>
+                                    {isResearching ? (
+                                        <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <div className="text-white bg-blue-600 px-3 py-1 rounded text-[10px] font-bold shadow">Auto-Add</div>
+                                    )}
+                                </button>
+                            )}
+
+                            {CATEGORIES.filter(cat => cat.id === activeTab).map(cat => {
+                                // 1. Filter Items
+                                const filteredItems = catalog.filter(i => {
+                                    // Base filters
+                                    if (i.category !== cat.id) return false;
+                                    if (i.parentId) return false;
+
+                                    // SEARCH FILTER
+                                    if (searchQuery.trim() && !i.name.toLowerCase().includes(searchQuery.toLowerCase()) && !i.brand?.toLowerCase().includes(searchQuery.toLowerCase())) {
+                                        return false;
+                                    }
+
+                                    if (i.subcategory === 'Extension' || i.subcategory === 'Extension Cable') return false;
+
+                                    // CAMERA FILTERS: by sensor size
+                                    if (activeTab === 'CAM' && technicalFilter !== 'ALL') {
+                                        // DB has mixed values, standardizing via script, but checking generic logic
+                                        return i.sensor_size === technicalFilter;
+                                    }
+
+                                    // LENS FILTERS: by type and coverage
+                                    if (activeTab === 'LNS') {
+                                        if (lensTypeFilter !== 'ALL' && i.subcategory !== lensTypeFilter) return false;
+                                        if (lensCoverageFilter !== 'ALL' && (i as any).coverage !== lensCoverageFilter) return false;
+                                    }
+
+                                    // SUPPORT & LIGHT FILTERS: by subcategory
+                                    if ((activeTab === 'SUP' || activeTab === 'LIT') && technicalFilter !== 'ALL') {
+                                        return i.subcategory === technicalFilter;
+                                    }
+
+                                    return true;
+                                }).sort((a, b) => {
+                                    // Primary: Brand (A-Z)
+                                    const brandA = a.brand?.toLowerCase() || '';
+                                    const brandB = b.brand?.toLowerCase() || '';
+                                    if (brandA < brandB) return -1;
+                                    if (brandA > brandB) return 1;
+
+                                    // Secondary: Model/Name (A-Z)
+                                    const modelA = a.model?.toLowerCase() || a.name.toLowerCase();
+                                    const modelB = b.model?.toLowerCase() || b.name.toLowerCase();
+                                    if (modelA < modelB) return -1;
+                                    if (modelA > modelB) return 1;
+                                    return 0;
+                                });
+
+                                // 2. Group Items (InventoryItem[])
+                                const groupedItems: { [key: string]: typeof filteredItems } = {};
+                                const standaloneItems: typeof filteredItems = [];
+
+                                // Helper to extract series name for grouping
+                                const getSeriesName = (i: InventoryItem) => {
+                                    if (i.category !== 'LNS') return i.model || i.name;
+                                    // Remove 'mm', 'T2.x', numbers
+                                    // ex: "Canon CN-E 50mm T1.3" -> "Canon CN-E"
+                                    let name = i.name;
+                                    // If brand is in name, keep it, otherwise prepend it for safety
+                                    if (i.brand && !name.toLowerCase().includes(i.brand.toLowerCase())) {
+                                        name = `${i.brand} ${name}`;
+                                    }
+
+                                    // Heuristic regex cleaning
+                                    return name
+                                        .replace(/\s\d+mm/gi, '') // Remove 50mm
+                                        .replace(/\sT\d+(\.\d+)?/gi, '') // Remove T1.3
+                                        .replace(/\sF\d+(\.\d+)?/gi, '') // Remove F2.8
+                                        .replace(/\s\d+\.?\d*"/gi, '') // Remove 1/4" etc
+                                        .trim();
+                                };
+
+                                if (activeTab === 'LNS' || (activeTab === 'SUP' && technicalFilter === 'Filters')) {
+                                    filteredItems.forEach(item => {
+                                        // Use fuzzy series name for key
+                                        const seriesName = getSeriesName(item);
+                                        const brand = item.brand || 'Generic';
+
+                                        // Group key: Brand + Series (normalized)
+                                        const key = `${brand}-${seriesName}`;
+
+                                        if (!groupedItems[key]) groupedItems[key] = [];
+                                        groupedItems[key].push(item);
+                                    });
+                                } else {
+                                    standaloneItems.push(...filteredItems);
+                                }
+
+                                return (
+                                    <div key={cat.id}>
+                                        <h3 className="text-[10px] font-black uppercase text-[#8E8E93] mb-2 px-2 sticky top-0 bg-[#F2F2F7] py-1 z-10 w-full">
+                                            {cat.name} OPTIONS
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {/* RENDER GROUPS */}
+                                            {Object.entries(groupedItems).map(([key, items]) => {
+                                                const seriesName = getSeriesName(items[0]);
+
+                                                if (items.length === 1) {
+                                                    // Single item - Render simple row
+                                                    return (
+                                                        <button
+                                                            key={items[0].id}
+                                                            onClick={() => handleAddWrapper(items[0])}
+                                                            className="w-full flex items-center p-3 bg-white rounded-lg active:scale-[0.99] transition-all text-left group hover:shadow-sm border border-transparent hover:border-blue-100"
+                                                        >
+                                                            <div className="flex-1">
+                                                                <div className="font-bold text-xs text-[#1C1C1E]">{items[0].name}</div>
+                                                                {/* Lens Specs */}
+                                                                {items[0].category === 'LNS' && (items[0].front_diameter_mm || items[0].weight_kg) && (
+                                                                    <div className="flex items-center gap-2 text-[8px] text-[#8E8E93] font-medium mt-0.5">
+                                                                        {items[0].front_diameter_mm && (
+                                                                            <span>⌀ {items[0].front_diameter_mm}mm</span>
+                                                                        )}
+                                                                        {items[0].weight_kg && (
+                                                                            <span>• {items[0].weight_kg}kg</span>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                                <div className="text-[9px] text-[#C7C7CC] group-hover:text-[#8E8E93]">
+                                                                    {items[0].subcategory || 'General'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-[#007AFF] text-lg font-light flex items-center justify-center h-6 w-6 rounded-full bg-blue-50 group-hover:bg-blue-600 group-hover:text-white transition-colors">+</div>
+                                                        </button>
+                                                    )
+                                                }
+                                                // Group Card
+                                                return (
+                                                    <div key={key} className="space-y-1">
+                                                        <LensGroupCard
+                                                            groupName={seriesName}
+                                                            brand={items[0].brand || ''}
+                                                            items={items}
+                                                            onAddItems={handleSmartAdd}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {/* RENDER STANDALONE */}
+                                            {standaloneItems.map(item => (
+                                                <button
+                                                    key={item.id}
+                                                    onClick={() => handleAddWrapper(item)}
+                                                    className="w-full flex items-center p-3 bg-white rounded-lg active:scale-[0.99] transition-all text-left group hover:shadow-sm border border-transparent hover:border-blue-100"
+                                                >
+                                                    <div className="flex-1">
+                                                        <div className="font-bold text-xs text-[#1C1C1E]">{item.name}</div>
+                                                        <div className="text-[9px] text-[#C7C7CC] group-hover:text-[#8E8E93]">
+                                                            {item.subcategory || 'General'}
+                                                            {activeTab === 'LNS' && (item as any).coverage && ` • ${(item as any).coverage}`}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-[#007AFF] text-lg font-light flex items-center justify-center h-6 w-6 rounded-full bg-blue-50 group-hover:bg-blue-600 group-hover:text-white transition-colors">+</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* REPLICATION MODAL (Inside Add Item Context) */}
+                        {replicationData && (
+                            <div className="absolute inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+                                <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
+                                    <div className="text-left mb-6">
+                                        <h3 className="text-xl font-black text-[#1C1C1E] mb-1">Smart Assignment</h3>
+                                        <p className="text-[11px] text-[#8E8E93] font-medium leading-relaxed">
+                                            Adding <span className="text-[#1C1C1E] font-bold">
+                                                {replicationData.items.length === 1 ? replicationData.items[0].name : `${replicationData.items.length} items`}
+                                            </span>. Also add to:
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-3 mb-8">
+                                        {activeCameras.filter(c => c !== replicationData.primaryCam).map(cam => {
+                                            const isSelected = replicationTargets.has(cam);
+                                            return (
+                                                <label
+                                                    key={cam}
+                                                    className={cn(
+                                                        "flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2",
+                                                        isSelected
+                                                            ? "bg-[#007AFF]/5 border-[#007AFF] shadow-sm"
+                                                            : "bg-[#F2F2F7] border-transparent hover:border-[#E5E5EA]"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={cn(
+                                                            "w-6 h-6 rounded-md flex items-center justify-center transition-colors border-2",
+                                                            isSelected ? "bg-[#007AFF] border-[#007AFF]" : "bg-white border-[#C7C7CC]"
+                                                        )}>
+                                                            {isSelected ? <Check className="w-4 h-4 text-white stroke-[4px]" /> : <div className="w-2 h-2 rounded-full bg-transparent" />}
+                                                        </div>
+                                                        <span className="font-bold text-sm text-[#1C1C1E]">Camera {cam}</span>
+                                                    </div>
+                                                    <div className={cn(
+                                                        "px-2 py-0.5 rounded-[4px] text-[10px] font-black uppercase text-white shadow-sm",
+                                                        getCameraColor(cam as any)
+                                                    )}>
+                                                        {cam}
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        hidden
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                            const next = new Set(replicationTargets);
+                                                            if (e.target.checked) next.add(cam);
+                                                            else next.delete(cam);
+                                                            setReplicationTargets(next);
+                                                        }}
+                                                    />
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                        <button
+                                            onClick={() => confirmReplication(false)}
+                                            className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-[#8E8E93] hover:bg-[#F2F2F7] rounded-2xl transition-all active:scale-95 border border-[#E5E5EA]"
+                                        >
+                                            Skip
+                                        </button>
+                                        <button
+                                            onClick={() => confirmReplication(true)}
+                                            className="flex-[1.5] py-4 text-xs font-black uppercase tracking-widest bg-[#1C1C1E] text-white rounded-2xl shadow-xl hover:bg-black transition-all active:scale-95"
+                                        >
+                                            Confirm ({replicationTargets.size || 0})
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* AI Confirmation Modal - Compact & Pro with Selection */}
+            {draftItems && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-xl shadow-2xl w-[90%] max-w-[700px] overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95">
+                        {/* Header */}
+                        <div className="px-4 py-3 border-b flex justify-between items-center bg-gray-50">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                                </div>
+                                <h3 className="text-sm font-bold text-gray-900">
+                                    AI Found {draftItems.length} Items
+                                </h3>
+                            </div>
+                            <button onClick={() => setDraftItems(null)} className="text-xs font-medium text-gray-500 hover:text-gray-800">Close</button>
+                        </div>
+
+                        {/* List - Dense Table */}
+                        <div className="flex-1 overflow-y-auto p-0">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="bg-gray-100 sticky top-0 z-10">
+                                    <tr>
+                                        <th className="px-3 py-2 w-8">
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                checked={draftItems.every(i => i._selected !== false)}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setDraftItems(draftItems.map(i => ({ ...i, _selected: checked })));
+                                                }}
+                                            />
+                                        </th>
+                                        <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Model</th>
+                                        <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Iris</th>
+                                        <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">CF</th>
+                                        <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Front</th>
+                                        <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Weight</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {draftItems.map((item: any, idx: number) => (
+                                        <tr key={idx} className={`hover:bg-blue-50/50 transition-colors ${item._selected !== false ? 'bg-blue-50/30' : ''}`}>
+                                            <td className="px-3 py-2">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    checked={item._selected !== false}
+                                                    onChange={(e) => {
+                                                        const newDrafts = [...draftItems];
+                                                        newDrafts[idx] = { ...item, _selected: e.target.checked };
+                                                        setDraftItems(newDrafts);
+                                                    }}
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 text-[10px] font-bold text-gray-900">{item.model.replace(item.brand, '').trim()}</td>
+                                            <td className="px-3 py-2 text-[10px] text-gray-600 font-mono">{item.iris_range || '-'}</td>
+                                            <td className="px-3 py-2 text-[10px] text-gray-600 font-mono">{item.close_focus || '-'}</td>
+                                            <td className="px-3 py-2 text-[10px] text-gray-600 font-mono">{item.front_diameter_mm ? `${item.front_diameter_mm}mm` : '-'}</td>
+                                            <td className="px-3 py-2 text-[10px] text-gray-600 font-mono">{item.weight_kg ? `${item.weight_kg}kg` : '-'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-3 border-t bg-gray-50 flex gap-2 justify-end items-center">
+                            <span className="text-[10px] text-gray-500 mr-auto">
+                                {draftItems.filter(i => i._selected !== false).length} selected
+                            </span>
+                            <button
+                                onClick={() => setDraftItems(null)}
+                                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 font-bold text-xs hover:bg-gray-300 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleConfirmDraft()}
+                                disabled={isResearching || draftItems.filter(i => i._selected !== false).length === 0}
+                                className="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isResearching ? 'Saving...' : `Add Selected (${draftItems.filter(i => i._selected !== false).length})`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
