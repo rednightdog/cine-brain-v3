@@ -17,7 +17,7 @@ import {
     inviteUserAction
 } from "@/app/actions";
 import { generateCineListPDF, type PDFItem } from "@/lib/pdf-generator";
-import { X, Layout, FileText, Camera, ShieldCheck, Lightbulb, UserPlus, RefreshCw, Users, RefreshCcw } from "lucide-react";
+import { X, Layout, FileText, Camera, ShieldCheck, Lightbulb, UserPlus, RefreshCw, Users, RefreshCcw, User } from "lucide-react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useProjectSync } from "@/hooks/useProjectSync";
 import Link from "next/link";
@@ -110,7 +110,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     const [projects, setProjects] = useState<ProjectWithItems[]>((initialProjects as ProjectWithItems[]) || []);
 
     // UI Logic State
-    const [activeMobileTab, setActiveMobileTab] = useState<'info' | 'docs' | 'gear'>('gear');
+    const [activeMobileTab, setActiveMobileTab] = useState<'info' | 'docs' | 'gear' | 'team' | 'profile'>('gear');
     const [warnings, setWarnings] = useState<string[]>([]);
 
     // Modal State
@@ -368,8 +368,8 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
 
     return (
         <div className="h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col font-sans overflow-hidden">
-            {/* Header */}
-            <header className="h-16 border-b border-[#E5E5EA] bg-white/80 backdrop-blur-xl flex items-center justify-between px-6 shrink-0 z-50">
+            {/* Header - HIDDEN ON MOBILE */}
+            <header className="hidden md:flex h-16 border-b border-[#E5E5EA] bg-white/80 backdrop-blur-xl items-center justify-between px-6 shrink-0 z-50">
                 <div className="flex items-center gap-4">
                     <button onClick={() => setActiveProjectId(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                         <X className="w-5 h-5 text-gray-400" />
@@ -447,37 +447,51 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                     </div>
                 </div>
 
-                {/* Mobile Tab Bar - Fixed Bottom */}
+                {/* Mobile Tab Bar - Fixed Bottom - 5 Items */}
                 <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 border-t border-[#E5E5EA] bg-white flex items-center justify-around z-50 pb-safe">
                     <button
                         onClick={() => setActiveMobileTab('gear')}
-                        className={cn("flex flex-col items-center gap-1", activeMobileTab === 'gear' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'gear' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
                         <Camera size={20} />
                         <span className="text-[9px] font-bold uppercase">Gear</span>
                     </button>
                     <button
                         onClick={() => setActiveMobileTab('info')}
-                        className={cn("flex flex-col items-center gap-1", activeMobileTab === 'info' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'info' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
                         <Layout size={20} />
                         <span className="text-[9px] font-bold uppercase">Info</span>
                     </button>
                     <button
                         onClick={() => setActiveMobileTab('docs')}
-                        className={cn("flex flex-col items-center gap-1", activeMobileTab === 'docs' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'docs' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
                         <FileText size={20} />
                         <span className="text-[9px] font-bold uppercase">Docs</span>
                     </button>
+                    <button
+                        onClick={() => setActiveMobileTab('team')}
+                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'team' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                    >
+                        <Users size={20} />
+                        <span className="text-[9px] font-bold uppercase">Team</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveMobileTab('profile')}
+                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'profile' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                    >
+                        <User size={20} />
+                        <span className="text-[9px] font-bold uppercase">Profile</span>
+                    </button>
                 </div>
 
-                {/* Mobile Overlays for Info/Docs */}
+                {/* Mobile Overlays for Info/Docs/Team/Profile */}
                 {activeMobileTab !== 'gear' && (
-                    <div className="lg:hidden absolute inset-0 bg-[#050505] z-40 overflow-y-auto p-6 animate-in slide-in-from-bottom duration-300">
+                    <div className="lg:hidden absolute inset-0 bg-[#050505] z-40 overflow-y-auto p-6 animate-in slide-in-from-bottom duration-300 pb-20">
                         <button
                             onClick={() => setActiveMobileTab('gear')}
-                            className="absolute top-4 right-4 bg-white/10 p-2 rounded-full"
+                            className="absolute top-4 right-4 bg-white/10 p-2 rounded-full text-white z-50"
                         >
                             <X size={20} />
                         </button>
@@ -499,6 +513,39 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                                 />
                             </div>
                         )}
+                        {activeMobileTab === 'team' && (
+                            <div className="mt-8">
+                                <h2 className="text-2xl font-bold uppercase tracking-tight text-white mb-6">Team Collaboration</h2>
+                                <div className="bg-white rounded-[32px] p-6">
+                                    <TeamPanel projectId={activeProjectId!} />
+                                </div>
+                            </div>
+                        )}
+                        {activeMobileTab === 'profile' && (
+                            <div className="mt-12 flex flex-col items-center text-white">
+                                <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center mb-4">
+                                    <User size={48} className="text-white/50" />
+                                </div>
+                                <h2 className="text-2xl font-bold mb-1">{session?.user?.name}</h2>
+                                <p className="text-white/50 text-sm mb-8">{session?.user?.email}</p>
+
+                                <div className="w-full max-w-sm space-y-4">
+                                    <button
+                                        onClick={() => setIsAdminCatalogOpen(true)}
+                                        className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-2xl flex items-center justify-center gap-3 font-bold uppercase tracking-wide transition-colors"
+                                    >
+                                        <ShieldCheck size={20} /> Admin Catalog
+                                    </button>
+
+                                    <button
+                                        onClick={() => setActiveProjectId(null)}
+                                        className="w-full py-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-2xl font-bold uppercase tracking-wide transition-colors"
+                                    >
+                                        Exit Project
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </main>
@@ -509,7 +556,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                 onClose={() => setIsAdminCatalogOpen(false)}
             />
 
-            {/* Invitation Modal */}
+            {/* Invitation Modal (Desktop) */}
             {activeSheet.type === 'invite' && (
                 <InvitationModal
                     projectId={activeProjectId!}
@@ -520,9 +567,9 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     );
 }
 
-// --- SUBMODAL COMPONENT ---
+// --- SUBMODAL COMPONENTS ---
 
-function InvitationModal({ projectId, onClose }: { projectId: string, onClose: () => void }) {
+function TeamPanel({ projectId }: { projectId: string }) {
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
     const [team, setTeam] = useState<any>(null);
@@ -547,6 +594,76 @@ function InvitationModal({ projectId, onClose }: { projectId: string, onClose: (
     };
 
     return (
+        <div className="space-y-6">
+            <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] ml-1">Invite by Email</label>
+                <div className="flex gap-2">
+                    <input
+                        className="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#1A1A1A] outline-none transition-all text-[#1A1A1A] font-medium"
+                        placeholder="colleague@cinematography.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                    />
+                    <button
+                        onClick={handleInvite}
+                        disabled={loading}
+                        className="bg-[#1A1A1A] text-white px-8 rounded-2xl font-bold hover:bg-[#333] transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                        {loading ? <RefreshCcw className="animate-spin w-4 h-4" /> : "INVITE"}
+                    </button>
+                </div>
+            </div>
+
+            <div className="space-y-4 pt-4">
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] ml-1 border-b border-[#F1F5F9] pb-2">Active Collaborators</h3>
+                <div className="max-h-[200px] overflow-y-auto space-y-3 pr-2 scrollbar-thin">
+                    {team?.members?.map((m: any) => (
+                        <div key={m.id} className="flex items-center justify-between p-4 bg-[#F8FAFC] rounded-2xl border border-[#F1F5F9]">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-[#1A1A1A] rounded-full flex items-center justify-center text-white font-bold text-xs">
+                                    {m.user?.name?.[0] || m.user?.email?.[0]}
+                                </div>
+                                <div>
+                                    <div className="text-sm font-bold text-[#1A1A1A]">{m.user?.name}</div>
+                                    <div className="text-[10px] text-[#64748B] font-medium">{m.user?.email}</div>
+                                </div>
+                            </div>
+                            <div className="text-[9px] font-bold uppercase bg-white border border-[#E2E8F0] px-2 py-1 rounded-md text-[#64748B]">
+                                {m.role}
+                            </div>
+                        </div>
+                    ))}
+
+                    {team?.invitations?.map((inv: any) => (
+                        <div key={inv.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-[#E2E8F0] border-dashed">
+                            <div className="flex items-center gap-3 opacity-60">
+                                <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold text-xs">
+                                    ?
+                                </div>
+                                <div>
+                                    <div className="text-sm font-bold text-gray-500">Pending...</div>
+                                    <div className="text-[10px] text-gray-400 font-medium">{inv.email}</div>
+                                </div>
+                            </div>
+                            <div className="text-[8px] font-bold uppercase bg-blue-50 text-blue-600 px-2 py-1 rounded-md">
+                                Invited
+                            </div>
+                        </div>
+                    ))}
+
+                    {(!team?.members || team.members.length === 0) && (!team?.invitations || team.invitations.length === 0) && (
+                        <div className="text-center py-8 text-[#94A3B8] italic text-sm">
+                            No collaborators yet. Start by inviting someone!
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function InvitationModal({ projectId, onClose }: { projectId: string, onClose: () => void }) {
+    return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in">
             <div className="bg-white rounded-[32px] p-8 w-full max-w-lg shadow-2xl border border-[#E2E8F0]">
                 <div className="flex justify-between items-center mb-8">
@@ -556,72 +673,7 @@ function InvitationModal({ projectId, onClose }: { projectId: string, onClose: (
                     </div>
                     <button onClick={onClose} className="p-3 bg-[#F8FAFC] rounded-full text-[#64748B] hover:bg-gray-100 transition-colors"><X className="w-5 h-5" /></button>
                 </div>
-
-                <div className="space-y-6">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] ml-1">Invite by Email</label>
-                        <div className="flex gap-2">
-                            <input
-                                className="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl py-4 px-6 focus:ring-2 focus:ring-[#1A1A1A] outline-none transition-all text-[#1A1A1A] font-medium"
-                                placeholder="colleague@cinematography.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                            />
-                            <button
-                                onClick={handleInvite}
-                                disabled={loading}
-                                className="bg-[#1A1A1A] text-white px-8 rounded-2xl font-bold hover:bg-[#333] transition-all flex items-center gap-2 disabled:opacity-50"
-                            >
-                                {loading ? <RefreshCcw className="animate-spin w-4 h-4" /> : "INVITE"}
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="space-y-4 pt-4">
-                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] ml-1 border-b border-[#F1F5F9] pb-2">Active Collaborators</h3>
-                        <div className="max-h-[200px] overflow-y-auto space-y-3 pr-2 scrollbar-thin">
-                            {team?.members?.map((m: any) => (
-                                <div key={m.id} className="flex items-center justify-between p-4 bg-[#F8FAFC] rounded-2xl border border-[#F1F5F9]">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-[#1A1A1A] rounded-full flex items-center justify-center text-white font-bold text-xs">
-                                            {m.user?.name?.[0] || m.user?.email?.[0]}
-                                        </div>
-                                        <div>
-                                            <div className="text-sm font-bold text-[#1A1A1A]">{m.user?.name}</div>
-                                            <div className="text-[10px] text-[#64748B] font-medium">{m.user?.email}</div>
-                                        </div>
-                                    </div>
-                                    <div className="text-[9px] font-bold uppercase bg-white border border-[#E2E8F0] px-2 py-1 rounded-md text-[#64748B]">
-                                        {m.role}
-                                    </div>
-                                </div>
-                            ))}
-
-                            {team?.invitations?.map((inv: any) => (
-                                <div key={inv.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-[#E2E8F0] border-dashed">
-                                    <div className="flex items-center gap-3 opacity-60">
-                                        <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold text-xs">
-                                            ?
-                                        </div>
-                                        <div>
-                                            <div className="text-sm font-bold text-gray-500">Pending...</div>
-                                            <div className="text-[10px] text-gray-400 font-medium">{inv.email}</div>
-                                        </div>
-                                    </div>
-                                    <div className="text-[8px] font-bold uppercase bg-blue-50 text-blue-600 px-2 py-1 rounded-md">
-                                        Invited
-                                    </div>
-                                </div>
-                            ))}
-
-                            {(!team?.members || team.members.length === 0) && (!team?.invitations || team.invitations.length === 0) && (
-                                <div className="text-center py-8 text-[#94A3B8] italic text-sm">
-                                    No collaborators yet. Start by inviting someone!
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <TeamPanel projectId={projectId} />
             </div>
         </div>
     );
