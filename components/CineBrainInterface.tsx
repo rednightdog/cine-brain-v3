@@ -408,87 +408,89 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             </header>
 
             {/* Main Application Interface */}
-            <main className="flex-1 flex overflow-hidden relative">
-                <div className="hidden lg:flex w-[350px] border-r border-[#E5E5EA] flex-col shrink-0 bg-white h-full z-10">
-                    {/* Scrollable Project Metadata */}
-                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 custom-scrollbar">
-                        <ProjectMetadataPanel
-                            project={activeProject!}
-                            onUpdateProject={async (id, data) => handleUpdateMetadata(data)}
-                            onInviteTeam={() => setActiveSheet({ type: 'invite' })}
-                        />
-                    </div>
-                    {/* Pinned Documents Area (Pinned to sidebar bottom) */}
-                    <div className="shrink-0 p-6 pt-0 pb-10">
-                        <div className="h-[2px] bg-[#F2F2F7] mb-6 w-full rounded-full opacity-50"></div>
-                        <DocumentsPanel
-                            project={activeProject!}
-                            onExport={handleExportPDF}
-                        />
-                    </div>
-                </div>
-
-                {/* Center Content: Inventory List */}
-                <div className="flex-1 flex flex-col min-w-0 bg-[var(--background)] overflow-hidden">
-                    <div className="flex-1 flex flex-col overflow-y-auto">
-                        <div className="max-w-5xl mx-auto w-full flex flex-col p-6 min-h-full">
-                            <InventoryPanel
-                                inventory={inventory}
-                                catalog={initialItems}
-                                warnings={warnings}
-                                onAddItem={handleAddEquipment}
-                                onUpdateItem={handleUpdateEntry}
-                                onToggleOption={handleToggleOption}
-                                onQtyChange={handleQtyChange}
-                                onSetConfigEntry={handleSetConfigEntry}
-                                onOpenAdmin={() => setIsAdminCatalogOpen(true)}
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Mobile Tab Bar - Fixed Bottom - 5 Items */}
-                <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 border-t border-[#E5E5EA] bg-white flex items-center justify-around z-50 pb-safe">
+            <main className="flex-1 flex flex-col overflow-hidden relative">
+                {/* Mobile Top Navigation Bar */}
+                <div className="lg:hidden h-14 border-b border-[#E5E5EA] bg-white flex items-center justify-around shrink-0 z-50 px-2 shadow-sm">
                     <button
                         onClick={() => setActiveMobileTab('gear')}
-                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'gear' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 min-w-[3rem]", activeMobileTab === 'gear' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
-                        <Camera size={20} />
+                        <Camera size={18} />
                         <span className="text-[9px] font-bold uppercase">Gear</span>
                     </button>
                     <button
                         onClick={() => setActiveMobileTab('info')}
-                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'info' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 min-w-[3rem]", activeMobileTab === 'info' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
-                        <Layout size={20} />
+                        <Layout size={18} />
                         <span className="text-[9px] font-bold uppercase">Info</span>
                     </button>
                     <button
                         onClick={() => setActiveMobileTab('docs')}
-                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'docs' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 min-w-[3rem]", activeMobileTab === 'docs' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
-                        <FileText size={20} />
+                        <FileText size={18} />
                         <span className="text-[9px] font-bold uppercase">Docs</span>
                     </button>
                     <button
                         onClick={() => setActiveMobileTab('team')}
-                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'team' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 min-w-[3rem]", activeMobileTab === 'team' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
-                        <Users size={20} />
+                        <Users size={18} />
                         <span className="text-[9px] font-bold uppercase">Team</span>
                     </button>
                     <button
                         onClick={() => setActiveMobileTab('profile')}
-                        className={cn("flex flex-col items-center gap-0.5 w-1/5", activeMobileTab === 'profile' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                        className={cn("flex flex-col items-center gap-0.5 min-w-[3rem]", activeMobileTab === 'profile' ? "text-[#007AFF]" : "text-[#8E8E93]")}
                     >
-                        <User size={20} />
+                        <User size={18} />
                         <span className="text-[9px] font-bold uppercase">Profile</span>
                     </button>
                 </div>
 
+                <div className="flex-1 flex overflow-hidden relative">
+                    <div className="hidden lg:flex w-[350px] border-r border-[#E5E5EA] flex-col shrink-0 bg-white h-full z-10">
+                        {/* Scrollable Project Metadata */}
+                        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 custom-scrollbar">
+                            <ProjectMetadataPanel
+                                project={activeProject!}
+                                onUpdateProject={async (id, data) => handleUpdateMetadata(data)}
+                                onInviteTeam={() => setActiveSheet({ type: 'invite' })}
+                            />
+                        </div>
+                        {/* Pinned Documents Area (Pinned to sidebar bottom) */}
+                        <div className="shrink-0 p-6 pt-0 pb-10">
+                            <div className="h-[2px] bg-[#F2F2F7] mb-6 w-full rounded-full opacity-50"></div>
+                            <DocumentsPanel
+                                project={activeProject!}
+                                onExport={handleExportPDF}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Center Content: Inventory List */}
+                    <div className="flex-1 flex flex-col min-w-0 bg-[var(--background)] overflow-hidden">
+                        <div className="flex-1 flex flex-col overflow-y-auto">
+                            <div className="max-w-5xl mx-auto w-full flex flex-col p-6 min-h-full">
+                                <InventoryPanel
+                                    inventory={inventory}
+                                    catalog={initialItems}
+                                    warnings={warnings}
+                                    onAddItem={handleAddEquipment}
+                                    onUpdateItem={handleUpdateEntry}
+                                    onToggleOption={handleToggleOption}
+                                    onQtyChange={handleQtyChange}
+                                    onSetConfigEntry={handleSetConfigEntry}
+                                    onOpenAdmin={() => setIsAdminCatalogOpen(true)}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Mobile Overlays for Info/Docs/Team/Profile */}
                 {activeMobileTab !== 'gear' && (
-                    <div className="lg:hidden absolute inset-0 bg-[#050505] z-40 overflow-y-auto p-6 animate-in slide-in-from-bottom duration-300 pb-20">
+                    <div className="lg:hidden absolute inset-0 top-14 bg-[#050505] z-50 overflow-y-auto p-6 animate-in slide-in-from-top duration-200">
                         <button
                             onClick={() => setActiveMobileTab('gear')}
                             className="absolute top-4 right-4 bg-white/10 p-2 rounded-full text-white z-50"
@@ -549,6 +551,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                     </div>
                 )}
             </main>
+
 
             {/* Administrative Catalog Manager */}
             <CatalogManager
