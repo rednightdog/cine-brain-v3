@@ -3,8 +3,10 @@
 import { Suspense, useActionState } from 'react';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
 import { signIn } from 'next-auth/react'; // Client side sign-in
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
+    const router = useRouter();
     return (
         <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
             {/* Background Ambience */}
@@ -38,12 +40,20 @@ export default function LoginPage() {
                     </div>
 
                     <form
-                        action={async (formData) => {
-                            await signIn("credentials", {
+                        onSubmit={async (e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            const res = await signIn("credentials", {
                                 email: formData.get("email"),
                                 password: formData.get("password"),
-                                callbackUrl: '/'
+                                redirect: false,
                             });
+
+                            if (res?.error) {
+                                alert("Invalid credentials");
+                            } else {
+                                router.push("/");
+                            }
                         }}
                         className="flex flex-col gap-3"
                     >
@@ -51,14 +61,14 @@ export default function LoginPage() {
                             name="email"
                             type="email"
                             placeholder="Email address"
-                            className="h-12 bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-4 text-sm font-medium focus:outline-none focus:border-[#007AFF] transition-colors"
+                            className="h-12 bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-4 text-sm font-medium focus:outline-none focus:border-[#007AFF] transition-colors text-white"
                             required
                         />
                         <input
                             name="password"
                             type="password"
                             placeholder="Password"
-                            className="h-12 bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-4 text-sm font-medium focus:outline-none focus:border-[#007AFF] transition-colors"
+                            className="h-12 bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-4 text-sm font-medium focus:outline-none focus:border-[#007AFF] transition-colors text-white"
                             required
                         />
                         <button

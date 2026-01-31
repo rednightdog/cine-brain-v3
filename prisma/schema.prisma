@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Onay durumlarını belirleyen liste
+enum EquipmentStatus {
+  PENDING    // Ajanın bulduğu ama senin onayını bekleyenler
+  APPROVED   // Senin onayladığın, herkesin görebildiği veriler
+}
+
 model EquipmentItem {
   id             String   @id @default(cuid())
   name           String
@@ -48,9 +54,11 @@ model EquipmentItem {
   imageUrl       String?
   payload_kg     Float?
   
-  // AI & Admin Flags
-  isAIGenerated  Boolean  @default(false)
-  isVerified     Boolean  @default(false)
+  // 🛡️ Yeni Güvenlik ve Takip Alanları
+  status         EquipmentStatus @default(APPROVED) // Eskiler otomatik onaylı kalsın
+  isAiResearched Boolean         @default(false)    // AI tarafından mı eklendi?
+  sourceUrl      String?                            // Bilginin alındığı link 🔗
+  isVerified     Boolean         @default(false)
   
   // Ownership (Personal Inventory)
   isPrivate      Boolean  @default(false)
@@ -69,23 +77,63 @@ model EquipmentItem {
   updatedAt      DateTime @updatedAt
 
   kitItems       KitItem[]
+
+  @@unique([brand, model, name])
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String?
-  image     String?
-  jobTitle  String?
-  role      String   @default("USER")
-  language  String   @default("TR")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // Optional for OAuth users
+  jobTitle      String?
+  role          String    @default("USER")
+  language      String    @default("TR")
+  accounts      Account[]
+  sessions      Session[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   kits      Kit[]
   equipment EquipmentItem[] @relation("UserEquipment")
   teams     TeamMember[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
 model Kit {
@@ -170,7 +218,9 @@ model KitItem {
 
   customName        String?
   customBrand       String?
+  customModel       String?
   customCategory    String?
+  customSubcategory String?
   customDescription String?
   
   notes         String?

@@ -1,8 +1,8 @@
 import React from 'react';
-import { AlertTriangle, Plug, Crop } from 'lucide-react';
+import { AlertTriangle, Plug, Crop, Link } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type WarningType = 'MOUNT' | 'SENSOR' | 'WEIGHT';
+export type WarningType = 'MOUNT' | 'SENSOR' | 'WEIGHT' | 'MEDIA' | 'POWER' | 'GENERAL' | 'DEPENDENCY';
 
 interface WarningBadgeProps {
     type: WarningType;
@@ -32,6 +32,34 @@ export function WarningBadge({ type, message, compact = false }: WarningBadgePro
             bgColor: 'bg-orange-50',
             borderColor: 'border-orange-200',
             label: 'Weight'
+        },
+        MEDIA: {
+            icon: AlertTriangle,
+            color: 'text-red-600',
+            bgColor: 'bg-red-50',
+            borderColor: 'border-red-200',
+            label: 'Media'
+        },
+        POWER: {
+            icon: Plug,
+            color: 'text-red-600',
+            bgColor: 'bg-red-50',
+            borderColor: 'border-red-200',
+            label: 'Power'
+        },
+        GENERAL: {
+            icon: AlertTriangle,
+            color: 'text-amber-600',
+            bgColor: 'bg-amber-50',
+            borderColor: 'border-amber-200',
+            label: 'Tech'
+        },
+        DEPENDENCY: {
+            icon: Link,
+            color: 'text-orange-600',
+            bgColor: 'bg-orange-50',
+            borderColor: 'border-orange-200',
+            label: 'Required'
         }
     };
 

@@ -10,8 +10,17 @@ export interface TechnicalSpecs {
     front_diameter_mm?: number;
     weight_kg?: number;
     description?: string;
-    isAIGenerated: boolean;
+    isAiResearched: boolean;
+    source_url?: string;
     accessories?: TechnicalSpecs[];
+
+    // Hardware Compatibility Specs
+    power?: { min_voltage?: number; max_voltage?: number; mount_type?: string };
+    media_slots?: string[];
+    compatible_codecs?: string[];
+    media_type?: string;
+    write_speed?: string;
+    certified_for?: string[];
 }
 
 /**
@@ -27,52 +36,86 @@ export function normalizeName(name: string): string {
 
 // Helper for Mock Logic (extracted for clarity) - Returns ARRAY
 function getMockResult(q: string): TechnicalSpecs[] | null {
+    const query = q.toLowerCase().trim();
+    console.log("[DEBUG] getMockResult check for:", query);
+
+    // --- BRAND LEVEL FAIL-SAFES (Priority 1) ---
+    // Sony
+    if (query === 'sony' || query.includes('sony cine alta')) {
+        const createSony = (model: string, sensor: 'FF' | 'S35' | 'LF', weight: number) => ({
+            brand: 'Sony', model: model, category: 'CAM', subcategory: 'Bodies', mount: 'PL', sensor_size: sensor, weight_kg: weight, isAiResearched: true,
+            description: `AI Researched: Sony ${model} Professional Cinema Camera.`, accessories: []
+        });
+        return [
+            createSony('BURANO', 'FF', 2.4),
+            createSony('VENICE 2 (8K)', 'LF', 3.5),
+            createSony('FX6', 'FF', 0.89)
+        ];
+    }
+
+    // Leitz / Leica
+    if (query === 'leica' || query === 'leitz' || query === 'laica' || query.includes('leitz leica')) {
+        const createLeitz = (model: string, iris: string, front: number) => ({
+            brand: 'Leitz', model: model, category: 'LNS', subcategory: 'Prime', coverage: 'FF', mount: 'PL', lens_type: 'Spherical' as const, front_diameter_mm: front, isAiResearched: true, iris_range: iris, description: `AI Researched: Leitz ${model}.`, accessories: []
+        });
+        return [
+            createLeitz('Summilux-C 35mm', 'T1.4', 95),
+            createLeitz('Summicron-C 35mm', 'T2.0', 95),
+            createLeitz('M 0.8 35mm', 'f/1.4', 80)
+        ];
+    }
+
+    // --- MODEL LEVEL FAIL-SAFES (Priority 2) ---
     // ARRI 35
-    if (q.includes('arri') && (q.includes('35') || q.includes('alexa'))) {
-        const isXtreme = q.includes('xtreme') || q.includes('extreme');
+    if (query.includes('arri') && (query.includes('35') || query.includes('alexa'))) {
+        const isXtreme = query.includes('xtreme') || query.includes('extreme');
         const accessories = [
-            { brand: 'ARRI', model: 'MVF-2 Viewfinder', category: 'SUP', subcategory: 'Accessories', isAIGenerated: true },
-            { brand: 'ARRI', model: 'Power Cable (KC-50)', category: 'SUP', subcategory: 'Accessories', isAIGenerated: true }
+            { brand: 'ARRI', model: 'MVF-2 Viewfinder', category: 'SUP', subcategory: 'Accessories', isAiResearched: true },
+            { brand: 'ARRI', model: 'Power Cable (KC-50)', category: 'SUP', subcategory: 'Accessories', isAiResearched: true }
         ];
         if (isXtreme) {
             accessories.push(
-                { brand: 'ARRI', model: 'Cage System', category: 'SUP', subcategory: 'Accessories', isAIGenerated: true },
-                { brand: 'Vocas', model: 'Top Handle', category: 'SUP', subcategory: 'Accessories', isAIGenerated: true },
-                { brand: 'Core SWX', model: 'Gold Mount Plate', category: 'SUP', subcategory: 'Power', isAIGenerated: true }
+                { brand: 'ARRI', model: 'Cage System', category: 'SUP', subcategory: 'Accessories', isAiResearched: true },
+                { brand: 'Vocas', model: 'Top Handle', category: 'SUP', subcategory: 'Accessories', isAiResearched: true },
+                { brand: 'Core SWX', model: 'Gold Mount Plate', category: 'SUP', subcategory: 'Power', isAiResearched: true }
             );
         }
         return [{
             brand: 'ARRI', model: isXtreme ? 'ALEXA 35 Xtreme Bundle' : 'ALEXA 35',
-            category: 'CAM', subcategory: 'S35', mount: 'LPL', sensor_size: 'S35', weight_kg: 2.9, isAIGenerated: true, accessories
+            category: 'CAM', subcategory: 'S35', mount: 'LPL', sensor_size: 'S35', weight_kg: 2.9, isAiResearched: true, accessories
         }];
     }
+
     // Signature Series
-    if (q.includes('signature')) {
-        if (q.includes('zoom') || q.includes('45-135') || q.includes('65-300') || q.includes('16-32')) {
+    if (query.includes('signature')) {
+        if (query.includes('zoom') || query.includes('45-135') || query.includes('65-300') || query.includes('16-32')) {
             let model = 'Signature Zoom 45-135mm T2.8';
-            if (q.includes('65-300')) model = 'Signature Zoom 65-300mm T2.8';
-            if (q.includes('16-32')) model = 'Signature Zoom 16-32mm T2.8';
+            if (query.includes('65-300')) model = 'Signature Zoom 65-300mm T2.8';
+            if (query.includes('16-32')) model = 'Signature Zoom 16-32mm T2.8';
             return [{
-                brand: 'ARRI', model: model, category: 'LNS', subcategory: 'Zoom', coverage: 'LF', mount: 'LPL', lens_type: 'Spherical', front_diameter_mm: 114, weight_kg: 3.7, description: `AI Researched: ARRI ${model}.`, isAIGenerated: true,
-                accessories: [{ brand: 'ARRI', model: 'LPL Mount Plug', category: 'SUP', subcategory: 'Accessories', isAIGenerated: true }]
+                brand: 'ARRI', model: model, category: 'LNS', subcategory: 'Zoom', coverage: 'LF', mount: 'LPL', lens_type: 'Spherical', front_diameter_mm: 114, weight_kg: 3.7, description: `AI Researched: ARRI ${model}.`, isAiResearched: true,
+                accessories: [{ brand: 'ARRI', model: 'LPL Mount Plug', category: 'SUP', subcategory: 'Accessories', isAiResearched: true }]
             }];
         }
-        const focalMatch = q.match(/(\d+)mm/);
+        const focalMatch = query.match(/(\d+)mm/);
         const focal = focalMatch ? focalMatch[1] : '47';
         return [{
-            brand: 'ARRI', model: `Signature Prime ${focal}mm T1.8`, category: 'LNS', subcategory: 'Prime', coverage: 'LF', mount: 'LPL', lens_type: 'Spherical', front_diameter_mm: 114, isAIGenerated: true, description: 'AI Researched: ARRI Signature Prime.', accessories: []
+            brand: 'ARRI', model: `Signature Prime ${focal}mm T1.8`, category: 'LNS', subcategory: 'Prime', coverage: 'LF', mount: 'LPL', lens_type: 'Spherical', front_diameter_mm: 114, isAiResearched: true, description: 'AI Researched: ARRI Signature Prime.', accessories: []
         }];
     }
+
     // Cooke S7
-    if (q.includes('cooke') && (q.includes('s7') || q.includes('plus'))) {
-        return [{ brand: 'Cooke', model: 'S7/i Full Frame Plus', category: 'LNS', subcategory: 'Prime', coverage: 'LF', mount: 'PL', lens_type: 'Spherical', front_diameter_mm: 110, isAIGenerated: true, description: 'AI Researched: Cooke S7/i.', accessories: [] }];
+    if (query.includes('cooke') && (query.includes('s7') || query.includes('plus'))) {
+        return [{ brand: 'Cooke', model: 'S7/i Full Frame Plus', category: 'LNS', subcategory: 'Prime', coverage: 'LF', mount: 'PL', lens_type: 'Spherical', front_diameter_mm: 110, isAiResearched: true, description: 'AI Researched: Cooke S7/i.', accessories: [] }];
     }
+
     // Zeiss Supreme
-    if (q.includes('zeiss') && q.includes('supreme')) {
-        return [{ brand: 'ZEISS', model: 'Supreme Prime', category: 'LNS', subcategory: 'Prime', coverage: 'LF', mount: 'PL', lens_type: 'Spherical', front_diameter_mm: 95, isAIGenerated: true, description: 'AI Researched: ZEISS Supreme Prime.', accessories: [] }];
+    if (query.includes('zeiss') && query.includes('supreme')) {
+        return [{ brand: 'ZEISS', model: 'Supreme Prime', category: 'LNS', subcategory: 'Prime', coverage: 'LF', mount: 'PL', lens_type: 'Spherical', front_diameter_mm: 95, isAiResearched: true, description: 'AI Researched: ZEISS Supreme Prime.', accessories: [] }];
     }
+
     // Canon CN-E Full Set Mock
-    if (q.includes('canon') && (q.includes('cn-e') || q.includes('prime'))) {
+    if (query.includes('canon') && (query.includes('cn-e') || query.includes('prime'))) {
         const createCne = (focal: string) => ({
             brand: 'Canon',
             model: `CN-E ${focal}mm T1.3 L F`,
@@ -82,64 +125,53 @@ function getMockResult(q: string): TechnicalSpecs[] | null {
             mount: 'EF',
             lens_type: 'Spherical' as const,
             front_diameter_mm: 114,
-            isAIGenerated: true,
+            isAiResearched: true,
             description: `AI Researched: Canon CN-E ${focal}mm.`,
             accessories: [] as any[]
         });
-
-        // If specific focal asked, prefer it first, but return whole set
-        return [
-            createCne('14'),
-            createCne('24'),
-            createCne('35'),
-            createCne('50'),
-            createCne('85'),
-            createCne('135')
-        ];
+        return [createCne('14'), createCne('24'), createCne('35'), createCne('50'), createCne('85'), createCne('135')];
     }
 
-    // Laowa (Handle "loova" typo implicitly via includes or explicit check)
-    if (q.includes('laowa') || q.includes('loova') || q.includes('loowa')) {
+    // Laowa
+    if (query.includes('laowa') || query.includes('loova') || query.includes('loowa')) {
         const createNano = (focal: string) => ({
-            brand: 'Laowa', model: `Nanomorph ${focal}mm T2.4`, category: 'LNS', subcategory: 'Anamorphic', coverage: 'S35', mount: 'PL/EF', lens_type: 'Anamorphic' as const, front_diameter_mm: 58, weight_kg: 0.5, isAIGenerated: true, description: `AI Researched: Laowa Nanomorph ${focal}mm.`, accessories: [] as any[], close_focus: "0.43m / 1'5", iris_range: "T2.4-T22"
+            brand: 'Laowa', model: `Nanomorph ${focal}mm T2.4`, category: 'LNS', subcategory: 'Anamorphic', coverage: 'S35', mount: 'PL/EF', lens_type: 'Anamorphic' as const, front_diameter_mm: 58, weight_kg: 0.5, isAiResearched: true, description: `AI Researched: Laowa Nanomorph ${focal}mm.`, accessories: [] as any[], close_focus: "0.43m / 1'5", iris_range: "T2.4-T22"
         });
-        // Return Nanomorph Set by default for broad query
-        if (!q.match(/\d+mm/)) {
+        if (!query.match(/\d+mm/)) {
             return [createNano('27'), createNano('35'), createNano('50'), createNano('65'), createNano('80')];
         }
-        return [createNano('35')]; // Default single
+        return [createNano('35')];
     }
 
     // Cooke S8/i
-    if (q.includes('cooke') && (q.includes('s8') || q.includes('i'))) {
+    if (query.includes('cooke') && (query.includes('s8') || query.includes('i'))) {
         const createS8 = (focal: string) => ({
-            brand: 'Cooke', model: `S8/i FF ${focal}mm T1.4`, category: 'LNS', subcategory: 'Prime', coverage: 'FF', mount: 'PL', lens_type: 'Spherical' as const, front_diameter_mm: 110, weight_kg: 2.4, isAIGenerated: true, description: `AI Researched: Cooke S8/i ${focal}mm.`, accessories: [] as any[], close_focus: "0.5m", iris_range: "T1.4-T22"
+            brand: 'Cooke', model: `S8/i FF ${focal}mm T1.4`, category: 'LNS', subcategory: 'Prime', coverage: 'FF', mount: 'PL', lens_type: 'Spherical' as const, front_diameter_mm: 110, weight_kg: 2.4, isAiResearched: true, description: `AI Researched: Cooke S8/i ${focal}mm.`, accessories: [] as any[], close_focus: "0.5m", iris_range: "T1.4-T22"
         });
-        if (!q.match(/\d+mm/)) {
+        if (!query.match(/\d+mm/)) {
             return [createS8('25'), createS8('32'), createS8('40'), createS8('50'), createS8('75'), createS8('100')];
         }
         return [createS8('50')];
     }
 
     // Generic fallback with Category Education
-    if (q.length > 2) {
-        // Guess Category
+    if (query.length > 2) {
         let cat = 'CAM';
         let sub = 'Bodies';
-        if (q.match(/(\d+mm)|(lens)|(prime)|(zoom)|(anamorphic)|(t\d\.\d)/)) {
+        if (query.match(/(\d+mm)|(lens)|(prime)|(zoom)|(anamorphic)|(t\d\.\d)/)) {
             cat = 'LNS';
-            sub = q.includes('zoom') ? 'Zoom' : 'Prime';
-        } else if (q.match(/(light)|(led)|(panel)|(cob)/)) {
+            sub = query.includes('zoom') ? 'Zoom' : 'Prime';
+        } else if (query.match(/(light)|(led)|(panel)|(cob)/)) {
             cat = 'LGT';
             sub = 'LED';
         }
 
         return [{
             brand: 'Generic',
-            model: q.charAt(0).toUpperCase() + q.slice(1),
+            model: query.charAt(0).toUpperCase() + query.slice(1),
             category: cat,
             subcategory: sub,
-            isAIGenerated: true,
+            isAiResearched: true,
             description: 'AI Generated Generic Item (API Fallback)',
             accessories: [] as any[]
         }];
@@ -148,122 +180,183 @@ function getMockResult(q: string): TechnicalSpecs[] | null {
 }
 
 /**
- * AI Research Simulator (Architecture for real API)
+ * Helper for Web Search (Serper.dev)
+ */
+async function searchWeb(query: string): Promise<string> {
+    const apiKey = process.env.SERPER_API_KEY;
+    if (!apiKey) {
+        console.log("No SERPER_API_KEY found. Skipping web search.");
+        return "";
+    }
+
+    try {
+        console.log("Searching web for:", query);
+        const res = await fetch("https://google.serper.dev/search", {
+            method: "POST",
+            headers: {
+                "X-API-KEY": apiKey,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                q: query + " technical specifications cinema lens camera",
+                num: 5 // Top 5 results
+            })
+        });
+
+        if (!res.ok) {
+            console.error("Search API Error:", res.statusText);
+            return "";
+        }
+
+        const json = await res.json();
+        const organic = json.organic || [];
+
+        // Format results for LLM Context
+        const context = organic.map((r: any, idx: number) => `
+        - **Source ${idx + 1}**: ${r.title} (${r.link})
+          **Snippet**: ${r.snippet}
+        `).join("\n");
+
+        return context;
+    } catch (e) {
+        console.error("Web Search Exception:", e);
+        return "";
+    }
+}
+
+/**
+ * Main AI Research Function
  */
 export async function researchEquipment(query: string): Promise<TechnicalSpecs[] | null> {
-    const q = query.toLowerCase();
+    let q = query.trim();
     const openaiKey = process.env.OPENAI_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
-    console.log("AI Research Triggered.", "OpenAI Key:", !!openaiKey, "Gemini Key:", !!geminiKey, "Query:", q);
+    // A. QUERY NORMALIZATION (Typo Pre-processing)
+    const lowerQ = q.toLowerCase();
+    const commonTypos: { [key: string]: string } = {
+        'laica': 'Leitz Leica',
+        'leica': 'Leitz Leica',
+        'ari': 'ARRI',
+        'arry': 'ARRI',
+        'loova': 'Laowa',
+        'cook': 'Cooke',
+        't7': 'Tribe7',
+        'blackwing': 'Tribe7 Blackwing7',
+        'angenieux': 'Angenieux',
+        'panavision': 'Panavision',
+        'red': 'RED Digital Cinema',
+        'sony': 'Sony Cine Alta'
+    };
+
+    for (const [typo, fix] of Object.entries(commonTypos)) {
+        if (lowerQ === typo || (lowerQ.includes(typo) && !lowerQ.includes(fix.toLowerCase()))) {
+            console.log(`[DEBUG] Normalizing: "${q}" -> "${fix}"`);
+            q = fix; // Simplify to ONLY the fix if the brand is mentioned alone
+            break;
+        }
+    }
+
+    console.log("[DEBUG] Research Phase Start. Final Query:", q);
 
     // 0. CHECK LOCAL KNOWLEDGE BASE FIRST (High Priority Sets)
-    // This allows us to return perfect, curated data for popular items without relying on AI laziness.
-    const localHit = getMockResult(q);
+    const localHit = getMockResult(q.toLowerCase());
     if (localHit && localHit.length > 0) {
-        // If it's a generic fallback (generated only when query > 2), we might still want AI if we have keys.
-        // But our getMockResult returns specific sets for Arri/Cooke/Laowa/Tribe7.
-        // Let's filter out the "Generic" fallback if we have API keys.
         const isGeneric = localHit[0].brand === 'Generic';
-
         if (!isGeneric) {
             console.log("Local Knowledge Hit!", localHit[0].model);
             return localHit;
         }
     }
 
-    const SYSTEM_PROMPT = `You are a cinema equipment expert. Research technical specs for: "${query}".
+    // 1. PERFORM WEB SEARCH (Deep Search)
+    const webContext = await searchWeb(q);
+    console.log("Web Search Context (Snippet):", webContext.substring(0, 500) + "...");
+
+    const SYSTEM_PROMPT = `You are an elite cinema equipment researcher and data curator. 
+    Your mission is to find and structure DEEP TECHNICAL SPECS for: "${q}".
     
-    ### CONTEXT & KNOWLEDGE BASE (Use this data for precision):
-    - **Tribe7 Blackwing7**: 
-      - **Tunings**: Binary (B), Transient (T), Expressive (X). Default to T-tuned if unspecified.
-      - **Focal Lengths**: 20.7mm, 27mm, 37mm, 47mm, 57mm, 77mm, 107mm, 137mm.
-      - **Aperture**: Mostly T1.9 (77mm/107mm are T1.8, 137mm is T2.0).
-      - **Front Diameter**: 114mm (Standard).
-      - **Weight**: Approx 1.4kg - 1.7kg depending on focal.
-    - **Cooke SP3**: Mirrorless primes (Sony E, RF, L, M). Focals: 25, 32, 50, 75, 100mm. T2.4. User interchangeable mounts.
+    ### LIVE WEB SEARCH CONTEXT:
+    ${webContext ? webContext : "No results found. Rely on your internal elite knowledge."}
+
+    ### INTERNAL REFERENCE (Use these EXACT values for these series):
+    - **Leitz/Leica Summilux-C**: Front: 95mm, Iris: T1.4, Image Circle: 35mm.
+    - **Leitz/Leica Summicron-C**: Front: 95mm, Iris: T2.0, Image Circle: 35mm.
+    - **Tribe7 Blackwing7**: Front: 114mm, Iris: T1.9 (Binary/Transient/Expressive).
+    - **Cooke SP3**: Front: 64mm (screw-in 58mm), Iris: T2.4.
     
-    ### RULES:
-    1. **Typo Correction**: Infer the correct brand if misspelled (e.g. "loova" -> "Laowa", "ari" -> "ARRI").
-    2. **Broad Search**: If the user searches for a Brand ONLY, return their Top 3-5 Product Lines.
-    3. **Lens Sets**: Always return the full set of focal lengths for lens series.
-    4. **Precision**: Use the CONTEXT above for exact values. If an item is not in context and you are unsure, provide your Best Educated Estimate but ensure it is realistic for cinema gear.
-    5. **Categorization**: 
-       - Lenses with "mm" and "T/F" stop MUST be category "LNS". 
-       - Do NOT put lenses in "CAM".
+    ### MANDATORY RULES:
+    1. **Brand Expansion**: If the query is just a BRAND name (e.g., "Sony", "ARRI", "Leica"), DO NOT return a single generic result. Instead, return a list of their 3-5 most famous CURRENT professional cinema products (Cameras and Lenses).
+    2. **No Empty Specs**: Never return "-" or empty values for professional equipment. If search results are missing data, use your internal expertise to provide the exact industry-standard technical specs for that specific model.
+    3. **Focal Lengths**: If the search is for a series, return the full list of focal lengths.
+    4. **Categorization**: Lenses MUST be "LNS". Pro cameras MUST be "CAM".
+    5. **Image Circle**: Be precise (S35, FF, LF).
+    6. **Description**: Mention key features and CITE sources.
     
-    Return ONLY a JSON array matching this schema:
+    Return ONLY a JSON array. If unsure, provide your BEST ACCURATE ESTIMATE.
     [{
         "brand": "string",
         "model": "string",
         "category": "CAM" | "LNS" | "LGT" | "FLT" | "SUP" | "MON",
         "subcategory": "string",
-        "coverage": "string (optional)",
-        "mount": "string (optional)",
-        "lens_type": "string (optional)",
-        "front_diameter_mm": "number (optional)",
-        "weight_kg": "number (optional)",
-        "close_focus": "string (optional, ex: \"0.43m / 1'5\"\")",
-        "iris_range": "string (optional, ex: \"T1.9-T22\")",
-        "image_circle_mm": "number (optional)",
+        "coverage": "string (example: 'LF', 'FF', 'S35')",
+        "mount": "string (PL, LPL, E, EF)",
+        "lens_type": "string (Spherical, Anamorphic)",
+        "front_diameter_mm": "number",
+        "weight_kg": "number",
+        "close_focus": "string (e.g., '0.45m')",
+        "iris_range": "string (e.g., 'T1.4-T22')",
+        "image_circle_mm": "number",
+        "power": { "min_voltage": "number", "max_voltage": "number", "mount_type": "string (V-Mount, Gold-Mount, B-Mount)" },
+        "media_slots": ["string array (AXS, SD, CFexpress, CFast)"],
+        "compatible_codecs": ["string array (X-OCN, ProRes, RAW)"],
+        "media_type": "string (for memory cards: AXS, SD, etc.)",
+        "write_speed": "string (e.g., '4.8Gbps')",
+        "certified_for": ["string array (codecs it can record)"],
         "description": "string",
-        "accessories": [ { "brand": "string", "model": "string", "category": "string", "subcategory": "string" } ]
+        "source_url": "string (the official product page URL or trusted review source)",
+        "accessories": []
     }]
-    DO NOT wrap in markdown.`;
+    DO NOT wrap in markdown. No explanation outside JSON.`;
 
-    // 1. Try OpenAI if Key Exists
-    if (openaiKey) {
+    // 2. Try OpenAI
+    if (openaiKey && openaiKey.length > 5) {
         try {
             const openai = new OpenAI({ apiKey: openaiKey });
-            console.log("Calling OpenAI...");
             const completion = await openai.chat.completions.create({
-                messages: [
-                    { role: "system", content: SYSTEM_PROMPT },
-                    { role: "user", content: query }
-                ],
+                messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: q }],
                 model: "gpt-4o",
             });
-
             const content = completion.choices[0].message.content;
-            console.log("OpenAI Response:", content?.substring(0, 100)); // Log first 100 chars
             if (content) {
-                // Strip markdown if present
                 const cleanJson = content.replace(/```json/g, '').replace(/```/g, '').trim();
+                console.log("OpenAI raw result length:", cleanJson.length);
                 const result = JSON.parse(cleanJson);
-                // Ensure array
-                return Array.isArray(result) ? result.map((i: TechnicalSpecs) => ({ ...i, isAIGenerated: true })) : [{ ...(result as TechnicalSpecs), isAIGenerated: true }];
+                return Array.isArray(result) ? result.map((i: any) => ({ ...i, isAiResearched: true })) : [{ ...result, isAiResearched: true }];
             }
-        } catch (error: any) {
-            console.error("OpenAI Failed:", error);
-            if (error?.status === 429) {
-                console.log("Quota Exceeded. Falling back...");
-            }
+        } catch (e) {
+            console.error("OpenAI failed, falling back to Gemini...");
         }
     }
 
-    // 2. Try Gemini if OpenAI missing or failed
-    if (geminiKey) {
+    // 3. Try Gemini
+    if (geminiKey && geminiKey.length > 5) {
         try {
             console.log("Calling Google Gemini (Pro 1.5)...");
             const genAI = new GoogleGenerativeAI(geminiKey);
-            // Upgrade to Pro 1.5 for better reasoning on niche items
             const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-
             const result = await model.generateContent(SYSTEM_PROMPT);
-            const response = await result.response;
-            const text = response.text();
+            const text = result.response.text();
 
-            console.log("Gemini Response:", text.substring(0, 100));
+            console.log("Gemini Raw Response Snippet:", text.substring(0, 300));
+
             const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(cleanJson);
-            return Array.isArray(data) ? data.map((i: TechnicalSpecs) => ({ ...i, isAIGenerated: true })) : [{ ...(data as TechnicalSpecs), isAIGenerated: true }];
-
-        } catch (error: any) {
-            console.error("Gemini Failed:", error);
+            return Array.isArray(data) ? data.map((i: any) => ({ ...i, isAiResearched: true })) : [{ ...data, isAiResearched: true }];
+        } catch (e) {
+            console.error("Gemini failed:", e);
         }
     }
 
-    // 3. Fallback to Mock (if API failed and we filtered out generic before)
-    console.log("No working API Key or API Failed. Using Mock.");
-    return getMockResult(q);
+    return getMockResult(q.toLowerCase());
 }

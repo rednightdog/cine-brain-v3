@@ -12,17 +12,19 @@ export function ProjectMetadataPanel({ project, onUpdateProject, onInviteTeam }:
 
     // Local state for form
     const [formData, setFormData] = useState({
-        name: project.name,
-        productionCo: project.productionCo || '',
-        producer: project.producer || '',
-        director: project.director || '',
-        cinematographer: project.cinematographer || '',
-        assistantCamera: project.assistantCamera || '',
-        rentalHouse: project.rentalHouse || '',
-        testDates: (project as any).testDates || '',
-        shootDates: (project as any).shootDates || '',
-        datesJson: project.datesJson || '{}'
+        name: project?.name || '',
+        productionCo: project?.productionCo || '',
+        producer: project?.producer || '',
+        director: project?.director || '',
+        cinematographer: project?.cinematographer || '',
+        assistantCamera: project?.assistantCamera || '',
+        rentalHouse: project?.rentalHouse || '',
+        testDates: (project as any)?.testDates || '',
+        shootDates: (project as any)?.shootDates || '',
+        datesJson: project?.datesJson || '{}'
     });
+
+    if (!project) return null;
 
     const handleSave = async () => {
         setIsEditing(false);
@@ -30,38 +32,40 @@ export function ProjectMetadataPanel({ project, onUpdateProject, onInviteTeam }:
     };
 
     return (
-        <div className="h-full flex flex-col bg-white border-r border-[#E5E5EA]">
-            <div className="p-4 border-b border-[#E5E5EA] flex justify-between items-center bg-[#F2F2F7]/50">
-                <h2 className="text-[10px] font-black uppercase text-[#8E8E93] tracking-[0.1em]">Project Info</h2>
-                <div className="flex items-center gap-3">
+        <div className="flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-[10px] font-black uppercase text-[#8E8E93] tracking-[0.2em] flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#007AFF]"></span>
+                    Project Details
+                </h2>
+                <div className="flex items-center gap-2">
                     <button
                         onClick={onInviteTeam}
-                        className="flex items-center gap-1.5 text-[10px] font-black uppercase text-[#1A1A1A] bg-[#E2E8F0] px-3 py-1.5 rounded-full hover:bg-gray-200 transition-all shadow-sm"
+                        className="flex items-center gap-1.5 text-[9px] font-black uppercase text-[#1A1A1A] bg-[#F2F2F7] px-2.5 py-1.5 rounded-full hover:bg-[#E5E5EA] transition-all"
                     >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"></path></svg>
                         Invite
                     </button>
                     <button
                         onClick={() => isEditing ? handleSave() : setIsEditing(true)}
-                        className="text-[10px] font-black uppercase text-[#007AFF] tracking-wider hover:opacity-70 transition-opacity"
+                        className="text-[9px] font-black uppercase text-[#007AFF] tracking-wider px-2 py-1.5 hover:bg-[#007AFF]/5 rounded-md transition-all"
                     >
                         {isEditing ? 'Save' : 'Edit'}
                     </button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-8">
+            <div className="space-y-8">
                 <div>
-                    <label className="block text-[10px] font-black uppercase text-[#8E8E93] tracking-widest mb-2">Project Name</label>
+                    <label className="block text-[9px] font-bold uppercase text-[#AEAEB2] tracking-widest mb-1">Project Name</label>
                     {isEditing ? (
                         <input
-                            className="w-full text-2xl font-black text-[#1C1C1E] border-b-2 border-[#007AFF] bg-transparent outline-none pb-2 uppercase tracking-tighter"
+                            className="w-full text-xl font-bold text-[#1C1C1E] border-b border-[#007AFF] bg-transparent outline-none pb-1 uppercase tracking-tight"
                             value={formData.name}
                             placeholder="PROJECT NAME"
                             onChange={(e) => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
                         />
                     ) : (
-                        <div className="text-2xl font-black text-[#1C1C1E] uppercase tracking-tighter leading-none break-words">
+                        <div className="text-xl font-bold text-[#1C1C1E] uppercase tracking-tight leading-none break-words">
                             {project.name}
                         </div>
                     )}
@@ -109,7 +113,7 @@ export function ProjectMetadataPanel({ project, onUpdateProject, onInviteTeam }:
                     </div>
 
                     {/* Dates Section */}
-                    <div className="pt-4 border-t border-[#F2F2F7] space-y-5">
+                    <div className="pt-6 border-t border-[#F2F2F7] space-y-5">
                         <Field
                             label="Test Dates"
                             value={formData.testDates}

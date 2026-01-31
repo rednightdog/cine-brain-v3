@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getGlobalCatalogAction, deleteEquipmentAction, verifyEquipmentAction } from "@/app/actions";
-import { X, Trash2, ShieldCheck, Search, Filter, CheckCircle } from "lucide-react";
+import { getGlobalCatalogAction, deleteEquipmentAction, approveEquipmentAction } from "@/app/actions";
+import { X, Trash2, ShieldCheck, Search, Filter, CheckCircle, ExternalLink } from "lucide-react";
 import { InventoryItem } from "./CineBrainInterface";
 
 interface CatalogManagerProps {
@@ -13,7 +13,7 @@ interface CatalogManagerProps {
 export function CatalogManager({ isOpen, onClose }: CatalogManagerProps) {
     const [catalog, setCatalog] = useState<InventoryItem[]>([]);
     const [search, setSearch] = useState("");
-    const [filter, setFilter] = useState<'ALL' | 'AI' | 'VERIFIED'>('ALL');
+    const [filter, setFilter] = useState<'ALL' | 'QUEUE' | 'VERIFIED'>('QUEUE'); // Default to Queue
     const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
     useEffect(() => {
@@ -38,8 +38,8 @@ export function CatalogManager({ isOpen, onClose }: CatalogManagerProps) {
         refreshCatalog();
     };
 
-    const handleVerify = async (id: string) => {
-        await verifyEquipmentAction(id);
+    const handleApprove = async (id: string) => {
+        await approveEquipmentAction(id);
         refreshCatalog();
     };
 
@@ -48,8 +48,8 @@ export function CatalogManager({ isOpen, onClose }: CatalogManagerProps) {
     const filtered = catalog.filter(item => {
         const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
         const matchesFilter = filter === 'ALL' ||
-            (filter === 'AI' && item.isAIGenerated && !item.isVerified) || // Inbox
-            (filter === 'VERIFIED' && (item.isVerified || !item.isAIGenerated)); // Verified or Manual
+            (filter === 'QUEUE' && item.status === 'PENDING') ||
+            (filter === 'VERIFIED' && item.status === 'APPROVED');
         return matchesSearch && matchesFilter;
     });
 
@@ -80,14 +80,14 @@ export function CatalogManager({ isOpen, onClose }: CatalogManagerProps) {
                     </div>
 
                     <div className="flex bg-[#E5E5EA]/50 p-1 rounded-xl">
-                        {(['ALL', 'AI', 'VERIFIED'] as const).map(f => (
+                        {(['ALL', 'QUEUE', 'VERIFIED'] as const).map(f => (
                             <button
                                 key={f}
                                 onClick={() => setFilter(f)}
                                 className={`px-4 py-1.5 rounded-lg text-[11px] font-bold transition-all ${filter === f ? "bg-white text-black shadow-sm" : "text-[#8E8E93]"
                                     }`}
                             >
-                                {f}
+                                {f === 'QUEUE' ? 'BEKLEME ODASI' : f}
                             </button>
                         ))}
                     </div>
@@ -107,7 +107,7 @@ export function CatalogManager({ isOpen, onClose }: CatalogManagerProps) {
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h3 className="text-[14px] font-bold text-[#1C1C1E]">{item.name}</h3>
-                                        {item.isAIGenerated && (
+                                        {item.isAiResearched && (
                                             <span className="flex items-center gap-1 bg-blue-50 text-blue-500 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter">
                                                 <ShieldCheck className="w-3 h-3" />
                                                 AI Generated
@@ -118,18 +118,29 @@ export function CatalogManager({ isOpen, onClose }: CatalogManagerProps) {
                                         <span className="text-[10px] text-[#8E8E93] font-bold uppercase">{item.subcategory || 'Standard'}</span>
                                         {item.mount && <span className="text-[10px] text-white bg-black px-1.5 rounded-sm font-black">{item.mount}</span>}
                                         {item.sensor_size && <span className="text-[10px] bg-[#F2F2F7] px-1.5 rounded-sm text-[#8E8E93] font-bold">{item.sensor_size}</span>}
+                                        {item.sourceUrl && (
+                                            <a
+                                                href={item.sourceUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-1 text-[9px] text-blue-500 hover:text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded-sm transition-colors"
+                                            >
+                                                SOURCE <ExternalLink size={10} />
+                                            </a>
+                                        )}
                                     </div>
                                 </div>
                             </div>
 
                             <div className="flex gap-2">
-                                {filter === 'AI' && (
+                                {filter === 'QUEUE' && (
                                     <button
-                                        onClick={() => handleVerify(item.id)}
-                                        className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-all border border-green-200"
-                                        title="Verify & Publish"
+                                        onClick={() => handleApprove(item.id)}
+                                        className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-all border border-green-200 flex items-center gap-2"
+                                        title="Approve & Publish"
                                     >
                                         <CheckCircle className="w-5 h-5" />
+                                        <span className="text-[10px] font-bold">ONAYLA</span>
                                     </button>
                                 )}
                                 <button

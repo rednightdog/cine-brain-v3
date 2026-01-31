@@ -9,6 +9,10 @@ import { auth } from "@/auth";
 export async function createProjectAction(data: any) {
     try {
         const session = await auth();
+        if (!session?.user?.id) {
+            return { success: false, error: "Authentication failed. Please log out and log in again." };
+        }
+        console.log("Create Project Session User ID:", session.user.id);
 
         const createData: any = {
             name: data.name,
@@ -22,7 +26,8 @@ export async function createProjectAction(data: any) {
             shootDates: data.shootDates,
             contactsJson: data.contactsJson,
             datesJson: data.datesJson,
-            userId: session?.user?.id || null // Link to owner
+            ownerId: session?.user?.id || null, // Correct field name
+            version: 1
         };
 
         const newProject = await prisma.kit.create({
@@ -59,6 +64,7 @@ export async function updateProjectAction(id: string, data: any) {
             shootDates: data.shootDates,
             contactsJson: data.contactsJson,
             datesJson: data.datesJson,
+            version: { increment: 1 } // Increment version for sync
         };
 
         const updatedProject = await prisma.kit.update({
@@ -101,6 +107,12 @@ export async function addKitItemAction(projectId: string, data: any) {
             data: createData
         });
 
+        // Bump project version for sync
+        await prisma.kit.update({
+            where: { id: projectId },
+            data: { version: { increment: 1 } }
+        });
+
         revalidatePath("/");
         return { success: true, item: newItem };
     } catch (e: any) {
@@ -122,6 +134,13 @@ export async function updateKitItemAction(itemId: string, data: any) {
             where: { id: itemId },
             data: updateData
         });
+
+        // Bump project version for sync
+        await prisma.kit.update({
+            where: { id: updatedItem.kitId },
+            data: { version: { increment: 1 } }
+        });
+
         revalidatePath("/");
         return { success: true, item: updatedItem };
     } catch (e: any) {
@@ -132,7 +151,17 @@ export async function updateKitItemAction(itemId: string, data: any) {
 
 export async function deleteKitItemAction(itemId: string) {
     try {
+        const item = await prisma.kitItem.findUnique({ where: { id: itemId } });
+        if (!item) return { success: false, error: "Item not found" };
+
         await prisma.kitItem.delete({ where: { id: itemId } });
+
+        // Bump project version for sync
+        await prisma.kit.update({
+            where: { id: item.kitId },
+            data: { version: { increment: 1 } }
+        });
+
         revalidatePath("/");
         return { success: true };
     } catch (e: any) {
@@ -144,14 +173,33 @@ export async function deleteKitItemAction(itemId: string) {
 // --- CATALOG & ADMIN ACTIONS ---
 
 export async function getGlobalCatalogAction() {
+    const session = await auth();
+    const userId = session?.user?.id;
+
+    const whereClause: any = {
+        OR: [
+            { isPrivate: false }, // Public items
+        ]
+    };
+
+    if (userId) {
+        whereClause.OR.push({ ownerId: userId }); // User's private items
+    }
+
     return await prisma.equipmentItem.findMany({
+        where: whereClause,
         orderBy: { updatedAt: 'desc' }
     });
 }
 
 export async function deleteEquipmentAction(id: string) {
     try {
-        await prisma.equipmentItem.delete({ where: { id } });
+        await prisma.equipmentItem.deleteMany({
+            where: {
+                id: id,
+                status: 'PENDING'
+            }
+        });
         revalidatePath("/");
         return { success: true };
     } catch (e: any) {
@@ -195,7 +243,7 @@ export async function researchAndAddEquipmentAction(query: string) {
                 weight_kg: specs.weight_kg,
                 description: `AI Researched ${specs.brand} ${specs.model}`,
                 daily_rate_est: 0,
-                isAIGenerated: true,
+                isAiResearched: true,
             }
         });
 
@@ -214,7 +262,7 @@ export async function researchAndAddEquipmentAction(query: string) {
                         parentId: mainItem.id, // Link to parent equipment
                         description: `Accessory for ${mainItem.name}`,
                         daily_rate_est: 0,
-                        isAIGenerated: true,
+                        isAiResearched: true,
                     }
                 });
             }
@@ -276,8 +324,10 @@ export async function saveDraftsToCatalogAction(input: any) {
                     weight_kg: draft.weight_kg,
                     description: `AI Researched. ${draft.iris_range ? `Iris: ${draft.iris_range}. ` : ''}${draft.close_focus ? `CF: ${draft.close_focus}. ` : ''}${draft.description || ''}`,
                     daily_rate_est: 0,
-                    isAIGenerated: true,
+                    isAiResearched: true, // Mark as AI Researched
                     isVerified: false,
+                    status: 'PENDING', // Set as PENDING for approval
+                    sourceUrl: draft.source_url, // Store the source URL 🔗
                 }
             });
             console.log("Main item created:", mainItem.id);
@@ -295,8 +345,10 @@ export async function saveDraftsToCatalogAction(input: any) {
                             parentId: mainItem.id,
                             description: `Accessory for ${mainItem.name}`,
                             daily_rate_est: 0,
-                            isAIGenerated: true,
-                            isVerified: false
+                            isAiResearched: true,
+                            isVerified: false,
+                            status: 'PENDING',
+                            sourceUrl: acc.source_url
                         }
                     });
                 }
@@ -314,14 +366,29 @@ export async function saveDraftsToCatalogAction(input: any) {
     }
 }
 
-export async function verifyEquipmentAction(id: string) {
+export async function approveEquipmentAction(id: string) {
     try {
-        await prisma.equipmentItem.update({
+        const approvedItem = await prisma.equipmentItem.update({
             where: { id },
-            data: { isVerified: true }
+            data: {
+                status: 'APPROVED',
+                updatedAt: new Date()
+            }
         });
         revalidatePath("/");
-        return { success: true };
+        return { success: true, item: approvedItem };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function getPendingEquipmentAction() {
+    try {
+        const pending = await prisma.equipmentItem.findMany({
+            where: { status: 'PENDING' },
+            orderBy: { createdAt: 'desc' }
+        });
+        return { success: true, items: pending };
     } catch (e: any) {
         return { success: false, error: e.message };
     }
@@ -414,6 +481,159 @@ export async function getProjectTeamAction(projectId: string) {
     return project?.team || null;
 }
 
+export async function createTeamAction(name: string) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const team = await prisma.team.create({
+            data: {
+                name,
+                members: {
+                    create: { userId: session.user.id, role: "OWNER" }
+                }
+            }
+        });
+
+        revalidatePath("/dashboard");
+        return { success: true, team };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function getUserTeamsAction() {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const teams = await prisma.team.findMany({
+            where: {
+                members: { some: { userId: session.user.id } }
+            },
+            include: {
+                members: { include: { user: true } },
+                kits: true,
+                invitations: { where: { accepted: false } }
+            },
+            orderBy: { updatedAt: 'desc' }
+        });
+
+        return { success: true, teams };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function acceptInvitationAction(token: string) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const invitation = await prisma.invitation.findUnique({
+            where: { token, accepted: false },
+            include: { team: true }
+        });
+
+        if (!invitation) return { success: false, error: "Invalid or expired invitation" };
+        if (invitation.expires < new Date()) return { success: false, error: "Invitation expired" };
+
+        // 1. Add user to team
+        await prisma.teamMember.create({
+            data: {
+                teamId: invitation.teamId,
+                userId: session.user.id,
+                role: invitation.role
+            }
+        });
+
+        // 2. Mark invitation as accepted
+        await prisma.invitation.update({
+            where: { id: invitation.id },
+            data: { accepted: true }
+        });
+
+        revalidatePath("/dashboard");
+        revalidatePath("/");
+        return { success: true, teamId: invitation.teamId };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function removeTeamMemberAction(teamId: string, userId: string) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        // Ensure requester is OWNER or ADMIN
+        const requester = await prisma.teamMember.findUnique({
+            where: { teamId_userId: { teamId, userId: session.user.id } }
+        });
+
+        if (!requester || (requester.role !== "OWNER" && requester.role !== "ADMIN")) {
+            return { success: false, error: "Insufficient permissions" };
+        }
+
+        // Prevent removing the owner unless by self? (Actually owners shouldn't be removable except by deleting team)
+        const target = await prisma.teamMember.findUnique({
+            where: { teamId_userId: { teamId, userId } }
+        });
+
+        if (target?.role === "OWNER") return { success: false, error: "Cannot remove team owner" };
+
+        await prisma.teamMember.delete({
+            where: { teamId_userId: { teamId, userId } }
+        });
+
+        revalidatePath("/dashboard");
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function deleteTeamAction(teamId: string) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const member = await prisma.teamMember.findUnique({
+            where: { teamId_userId: { teamId, userId: session.user.id } }
+        });
+
+        if (member?.role !== "OWNER") return { success: false, error: "Only the owner can delete a team" };
+
+        await prisma.team.delete({ where: { id: teamId } });
+
+        revalidatePath("/dashboard");
+        revalidatePath("/");
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+export async function getPendingInvitationsAction() {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.email) return { success: false, error: "Unauthorized" };
+
+        const invitations = await prisma.invitation.findMany({
+            where: {
+                email: session.user.email,
+                accepted: false,
+                expires: { gt: new Date() }
+            },
+            include: { team: true }
+        });
+
+        return { success: true, invitations };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
 export async function checkForUpdatesAction(projectId: string, currentVersion: string) {
     const project = await prisma.kit.findUnique({
         where: { id: projectId },
@@ -424,4 +644,59 @@ export async function checkForUpdatesAction(projectId: string, currentVersion: s
 
     const lastUpdate = project.updatedAt.getTime().toString();
     return { changed: lastUpdate !== currentVersion, version: lastUpdate };
+}
+
+// --- CUSTOM ITEM ACTIONS ---
+
+export async function createCustomItemAction(data: any) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const newItem = await prisma.equipmentItem.create({
+            data: {
+                name: data.model ? `${data.brand} ${data.model}` : data.name,
+                brand: data.brand || "Generic",
+                model: data.model || "Custom",
+                category: data.category,
+                subcategory: data.subcategory,
+                description: data.description || "Custom Item",
+                daily_rate_est: 0,
+                isPrivate: true,
+                ownerId: session.user.id,
+                status: 'APPROVED', // Auto-approve private items
+                isVerified: true
+            }
+        });
+
+        revalidatePath("/");
+        return { success: true, item: newItem };
+    } catch (e: any) {
+        console.error("Create Custom Item Error:", e);
+        return { success: false, error: e.message };
+    }
+}
+
+export async function deleteCustomItemAction(id: string) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const item = await prisma.equipmentItem.findUnique({ where: { id } });
+
+        if (!item) return { success: false, error: "Item not found" };
+        if (item.ownerId !== session.user.id) return { success: false, error: "Unauthorized" };
+
+        // Manual Cascade: Delete all KitItems referencing this custom item first
+        await prisma.kitItem.deleteMany({
+            where: { equipmentId: id }
+        });
+
+        await prisma.equipmentItem.delete({ where: { id } });
+
+        revalidatePath("/");
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
 }

@@ -1,15 +1,25 @@
 import React, { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { InventoryEntry, InventoryItem } from './CineBrainInterface';
-import { Plus, X, Settings2, Minus } from 'lucide-react';
+import { Plus, X, Settings2, Minus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor } from '@/lib/inventory-utils';
 import { Search, Info, AlertTriangle, ShieldCheck, Check, AlertCircle } from 'lucide-react';
 import { validateCompatibility } from '@/lib/compatibility';
-import { researchEquipmentDraftAction, saveDraftsToCatalogAction } from '@/app/actions';
+import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
 import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningBadge, WarningTooltip } from './ui/WarningBadge';
 import { getCompatibleAccessories } from '@/lib/camera-accessories';
+import { getProTips } from '@/lib/pro-tips';
+import { Lightbulb } from 'lucide-react';
+
+const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
+    CAM: ['Generic', 'Bodies', 'Monitor', 'Media', 'Power', 'Support', 'GoPro', 'Drone', 'Specialty'],
+    LNS: ['Generic', 'Prime', 'Zoom', 'Anamorphic', 'Vintage', 'Macro', 'Filter', 'Adapter'],
+    LIT: ['Generic', 'LED', 'Daylight', 'Tungsten', 'HMI', 'Tube', 'Panel', 'Modifier', 'Stand', 'Grip', 'Control'],
+    SUP: ['Generic', 'Tripod', 'Head', 'Stabilizer', 'Gimbal', 'EasyRig', 'Slider', 'Dolly', 'Jib', 'Car Mount', 'Matte Box', 'Follow Focus', 'Wireless', 'Audio', 'Batteries', 'Media'],
+};
 
 function cn(...inputs: (string | undefined | null | false)[]) {
     return twMerge(clsx(inputs));
@@ -33,11 +43,14 @@ export function InventoryPanel(props: InventoryPanelProps) {
         catalog,
         warnings,
         onAddItem,
+        onUpdateItem,
         onToggleOption,
         onQtyChange,
         onSetConfigEntry,
         onOpenAdmin
     } = props;
+
+    const router = useRouter(); // <--- Initialize Router
 
     // Local UI State
     const [activeTab, setActiveTab] = useState("CAM");
@@ -52,9 +65,37 @@ export function InventoryPanel(props: InventoryPanelProps) {
     const [lensCoverageFilter, setLensCoverageFilter] = useState<'ALL' | 'S35' | 'FF' | 'LF'>('ALL');
     const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
 
+    // Custom Item State
+    const [isCreatingCustom, setIsCreatingCustom] = useState(false);
+    const [customForm, setCustomForm] = useState({
+        brand: "",
+        model: "",
+        description: "",
+        category: "CAM",
+        subcategory: "Bodies"
+    });
+
     // Replication State
     const [replicationData, setReplicationData] = useState<{ items: InventoryItem[], primaryCam: string } | null>(null);
     const [replicationTargets, setReplicationTargets] = useState<Set<string>>(new Set());
+
+    // Reset filters when changing category
+    React.useEffect(() => {
+        setTechnicalFilter('ALL');
+        setLensTypeFilter('ALL');
+        setLensCoverageFilter('ALL');
+    }, [activeTab]);
+
+    // Pre-fill Custom Form when opening
+    React.useEffect(() => {
+        if (isCreatingCustom) {
+            setCustomForm(prev => ({
+                ...prev,
+                category: activeTab,
+                subcategory: technicalFilter !== 'ALL' ? technicalFilter : (SUBCATEGORY_OPTIONS[activeTab]?.[0] || 'General')
+            }));
+        }
+    }, [isCreatingCustom, activeTab, technicalFilter]);
 
     // Filter Logic
     const sortedInventory = useMemo(() => {
@@ -71,9 +112,24 @@ export function InventoryPanel(props: InventoryPanelProps) {
         }).filter(entry => {
             if (cameraFilter !== 'ALL' && entry.assignedCam !== cameraFilter) return false;
             const item = catalog.find(i => i.id === entry.equipmentId);
-            return item?.category === activeTab;
+            if (item?.category !== activeTab) return false;
+
+            // Subcategory filtering for Support and Light in the main list
+            if ((activeTab === 'SUP' || activeTab === 'LIT') && technicalFilter !== 'ALL') {
+                const sub = item.subcategory || '';
+                if (technicalFilter === 'Filters') return sub.includes('Filter');
+                if (technicalFilter === 'Batteries') return sub.includes('Batter');
+                if (technicalFilter === 'Media') return sub.includes('Media') || sub.includes('Card');
+                if (technicalFilter === 'Matte Box') return sub.toLowerCase().includes('matte');
+                if (technicalFilter === 'Focus') return sub.includes('Focus') || sub.includes('FIZ');
+                if (technicalFilter === 'Wireless') return sub.includes('Wireless') || sub.includes('Transmitter');
+                if (technicalFilter === 'Support') return ['Head', 'Handheld', 'Vest', 'Rods', 'Tripod', 'Gimbal', 'Dolly', 'Slider', 'Fluid Head', 'Tripod Legs'].includes(sub);
+                if (technicalFilter === 'Audio') return sub.includes('Microphone') || sub.includes('Recorder');
+                return sub === technicalFilter;
+            }
+            return true;
         });
-    }, [inventory, cameraFilter, activeTab, catalog]);
+    }, [inventory, cameraFilter, activeTab, catalog, technicalFilter]);
 
     // Grouping logic for the Kit list (Selected Section)
     const displayInventory = useMemo(() => {
@@ -111,6 +167,9 @@ export function InventoryPanel(props: InventoryPanelProps) {
             return a.series.localeCompare(b.series);
         });
     }, [sortedInventory, activeTab, catalog]);
+
+    // Professional Advice (Pro Tips)
+    const proTips = useMemo(() => getProTips(inventory), [inventory]);
 
     // Derived: Active Cameras
     const activeCameras = useMemo(() => {
@@ -226,11 +285,56 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
             // Force refresh of search results based on new catalog
             // We can hack this by toggling a dummy state or just alerting
-            alert(`✅ Added ${res.count} items! They should appear in the list below.`);
+            alert(`✅ ${res.count} ürün "Bekleme Odası"na eklendi! Yönetici onayından sonra katalogda görünecektir.`);
 
         } else {
             alert("Failed to save: " + res.error);
         }
+    };
+
+    // Custom Item Action
+    const handleAddCustom = async () => {
+        if (!customForm.model) return;
+
+        const payload = {
+            brand: customForm.brand,
+            model: customForm.model,
+            description: customForm.description,
+            category: customForm.category,
+            subcategory: customForm.subcategory
+        };
+
+        const res = await createCustomItemAction(payload);
+        if (res.success && res.item) {
+            // Optimistically add to inventory
+            onAddItem(res.item as any, cameraFilter === 'ALL' ? 'A' : cameraFilter);
+            setIsCatalogOpen(false); // Close modal
+            setIsCreatingCustom(false); // Reset mode
+            setCustomForm({ brand: "", model: "", description: "", category: activeTab, subcategory: SUBCATEGORY_OPTIONS[activeTab]?.[0] || 'General' }); // Reset form
+            router.refresh(); // <--- Force refresh to update catalog
+        } else {
+            alert(res.error || "Failed to create custom item.");
+        }
+    };
+
+    const handleDeleteCustom = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!confirm("Are you sure you want to delete this custom item from the global catalog?")) return;
+
+        const res = await deleteCustomItemAction(id);
+        if (res.success) {
+            alert("✅ Custom Item Deleted!");
+            router.refresh(); // <--- Force refresh to remove from catalog
+        } else {
+            alert(res.error || "Failed to delete item");
+        }
+    };
+
+    const handleToggleCam = (entry: InventoryEntry) => {
+        const cams = ['A', 'B', 'C'];
+        const currentIdx = cams.indexOf(entry.assignedCam);
+        const nextIdx = (currentIdx + 1) % cams.length;
+        onUpdateItem(entry.id, { assignedCam: cams[nextIdx] });
     };
 
     // Compatibility Checks
@@ -246,10 +350,10 @@ export function InventoryPanel(props: InventoryPanelProps) {
         <div className="h-full flex flex-col bg-white overflow-hidden relative">
             {/* Top Search Removed - Moved to Add Item Modal */}
             {/* Header / Tabs */}
-            <div className="bg-white/95 backdrop-blur border-b border-[#E5E5EA] flex-none z-10">
-                <div className="flex justify-between items-center px-4 py-3">
+            <div className="bg-[var(--background)]/90 backdrop-blur border-b border-[#E5E5EA] flex-none z-10">
+                <div className="flex justify-between items-center px-4 py-4">
                     <div className="flex items-center gap-2">
-                        <h2 className="text-sm font-black uppercase tracking-tight">Equipment</h2>
+                        <h2 className="text-sm font-bold uppercase tracking-tight">Equipment</h2>
                         {onOpenAdmin && (
                             <button
                                 onClick={onOpenAdmin}
@@ -271,8 +375,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                     className={cn(
                                         "px-2 py-0.5 text-[10px] font-bold rounded-md transition-all",
                                         cameraFilter === cam
-                                            ? "bg-white shadow text-black"
-                                            : "text-[#8E8E93] hover:text-[#1C1C1E]"
+                                            ? "bg-white shadow text-[#1A1A1A]"
+                                            : "text-[#8E8E93] hover:text-[#1A1A1A] transition-colors"
                                     )}
                                 >
                                     {cam === 'ALL' ? 'ALL' : `CAM ${cam}`}
@@ -282,15 +386,15 @@ export function InventoryPanel(props: InventoryPanelProps) {
                     )}
                 </div>
 
-                {/* Categories */}
-                <div className="flex px-4 gap-6 border-b border-transparent">
+                {/* Categories Scroll */}
+                <div className="flex px-4 py-2 gap-6 overflow-x-auto no-scrollbar border-b border-[#F2F2F7]">
                     {CATEGORIES.map(cat => (
                         <button
                             key={cat.id}
                             onClick={() => setActiveTab(cat.id)}
                             className={cn(
-                                "pb-2 text-[11px] font-bold tracking-wider uppercase transition-all relative top-[1px] outline-none focus:outline-none",
-                                activeTab === cat.id ? "text-black border-b-2 border-black" : "text-[#C7C7CC]"
+                                "text-[11px] font-bold uppercase tracking-widest pb-2 whitespace-nowrap transition-all",
+                                activeTab === cat.id ? "text-[#1A1A1A] border-b-2 border-[#1A1A1A]" : "text-[#C7C7CC]"
                             )}
                         >
                             {cat.name}
@@ -298,7 +402,28 @@ export function InventoryPanel(props: InventoryPanelProps) {
                     ))}
                 </div>
 
-
+                {/* Main Panel Sub-Filters (for Support & Light) */}
+                {(activeTab === 'SUP' || activeTab === 'LIT') && (
+                    <div className="flex px-4 py-2 gap-1.5 overflow-x-auto no-scrollbar bg-white/50 border-b border-[#F2F2F7]">
+                        {(activeTab === 'SUP'
+                            ? ['ALL', 'Batteries', 'Media', 'Filters', 'Matte Box', 'Focus', 'Wireless', 'Monitors', 'Support', 'Audio']
+                            : ['ALL', 'LED', 'Daylight', 'Tungsten', 'Ballast', 'Modifier', 'Accessory']
+                        ).map(f => (
+                            <button
+                                key={f}
+                                onClick={() => setTechnicalFilter(f)}
+                                className={cn(
+                                    "px-2.5 py-1 rounded-full text-[9px] font-bold border transition-all whitespace-nowrap",
+                                    technicalFilter === f
+                                        ? "bg-[#1A1A1A] text-white border-[#1A1A1A]"
+                                        : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
+                                )}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Warnings Bar */}
@@ -313,11 +438,11 @@ export function InventoryPanel(props: InventoryPanelProps) {
             )}
 
             {/* Main List */}
-            <div className="flex-1 overflow-y-auto bg-gray-50/30 pb-20">
+            <div className="flex-1 overflow-y-auto bg-[var(--background)] pb-20">
                 {sortedInventory.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center pt-32 opacity-40">
+                    <div className="flex flex-col items-center justify-center pt-32 opacity-20">
                         <div className="text-4xl mb-2">📹</div>
-                        <p className="text-xs font-bold uppercase">List is Empty</p>
+                        <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]">List is Empty</p>
                     </div>
                 ) : (
                     <div className="divide-y divide-[#E5E5EA]">
@@ -331,14 +456,18 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                     <div key={`${assignedCam}-${brand}-${series}`} className="group flex flex-col py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7]">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-4 overflow-hidden">
-                                                <div className={cn(
-                                                    "w-6 h-6 flex items-center justify-center rounded-[6px] text-xs font-black shrink-0 text-white shadow-sm",
-                                                    getCameraColor(assignedCam)
-                                                )}>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleToggleCam(entries[0]); }}
+                                                    className={cn(
+                                                        "w-6 h-6 flex items-center justify-center rounded-[6px] text-xs font-bold shrink-0 text-white shadow-sm hover:scale-110 active:scale-95 transition-all",
+                                                        getCameraColor(assignedCam)
+                                                    )}
+                                                    title="Click to toggle Camera (A/B/C)"
+                                                >
                                                     {assignedCam}
-                                                </div>
+                                                </button>
                                                 <div className="flex flex-col min-w-0">
-                                                    <span className="text-[14px] font-bold leading-tight text-[#1C1C1E]">
+                                                    <span className="text-[14px] font-semibold leading-tight text-[#1C1C1E]">
                                                         {brand} {series} {primaryAperture}
                                                     </span>
                                                     <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
@@ -398,20 +527,24 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                             return (
                                 <div key={entry.id} className="group">
-                                    <div className="flex items-center justify-between py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7]">
-                                        <div className="flex items-center gap-4 overflow-hidden">
-                                            <div className={cn(
-                                                "w-6 h-6 flex items-center justify-center rounded-[6px] text-xs font-black shrink-0 text-white shadow-sm",
-                                                getCameraColor(entry.assignedCam)
-                                            )}>
+                                    <div className="flex items-center py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7] gap-4">
+                                        <div className="flex-1 flex items-center gap-4 overflow-hidden">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleToggleCam(entry); }}
+                                                className={cn(
+                                                    "w-6 h-6 flex items-center justify-center rounded-[6px] text-xs font-bold shrink-0 text-white shadow-sm hover:scale-110 active:scale-95 transition-all",
+                                                    getCameraColor(entry.assignedCam)
+                                                )}
+                                                title="Click to toggle Camera (A/B/C)"
+                                            >
                                                 {entry.assignedCam}
-                                            </div>
+                                            </button>
                                             <div className="flex flex-col min-w-0">
                                                 <div className="flex items-center gap-2 overflow-hidden mr-1">
-                                                    <span className="text-[14px] font-bold leading-tight text-[#1C1C1E]">
+                                                    <span className="text-[14px] font-semibold leading-tight text-[#1C1C1E]">
                                                         {item.name}
                                                     </span>
-                                                    {item.isAIGenerated && (
+                                                    {item.isAiResearched && (
                                                         <div className="p-0.5 bg-blue-50 rounded" title="AI Researched">
                                                             <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
                                                         </div>
@@ -475,7 +608,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                                                 <div className="flex flex-col w-full mt-0.5">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] text-[#8E8E93] uppercase font-black tracking-wider">
+                                                        <span className="text-[10px] text-[#8E8E93] uppercase font-bold tracking-wider">
                                                             {item.subcategory || item.category}
                                                         </span>
                                                         {/* Mount Info */}
@@ -516,7 +649,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                                 {activeWarnings.map((w, idx) => (
                                                                     <div key={idx} className={cn(
                                                                         "p-2 rounded-md border flex flex-col gap-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 relative group",
-                                                                        w.type === 'MOUNT' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
+                                                                        w.type === 'MOUNT' || w.type === 'MEDIA' || w.type === 'POWER' ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
                                                                     )}>
                                                                         {/* Dismiss Button */}
                                                                         <button
@@ -536,20 +669,23 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                                         <div className="flex items-start gap-2">
                                                                             <div className={cn(
                                                                                 "p-1 rounded-full shrink-0 mt-0.5",
-                                                                                w.type === 'MOUNT' ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"
+                                                                                w.type === 'MOUNT' || w.type === 'MEDIA' || w.type === 'POWER' ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"
                                                                             )}>
                                                                                 <AlertTriangle className="w-3.5 h-3.5" />
                                                                             </div>
                                                                             <div className="flex flex-col pr-4">
                                                                                 <span className={cn(
                                                                                     "text-[11px] font-bold uppercase tracking-wide",
-                                                                                    w.type === 'MOUNT' ? "text-red-800" : "text-amber-800"
+                                                                                    w.type === 'MOUNT' || w.type === 'MEDIA' || w.type === 'POWER' ? "text-red-800" : "text-amber-800"
                                                                                 )}>
-                                                                                    {w.type === 'MOUNT' ? 'Incompatible Mount' : 'Potential Issue'}
+                                                                                    {w.type === 'MOUNT' ? 'Mount Mismatch' :
+                                                                                        w.type === 'MEDIA' ? 'Media Warning' :
+                                                                                            w.type === 'POWER' ? 'Power Warning' :
+                                                                                                w.type === 'DEPENDENCY' ? 'Required Accessory' : 'Technical Warning'}
                                                                                 </span>
                                                                                 <span className={cn(
                                                                                     "text-[11px] font-medium leading-snug",
-                                                                                    w.type === 'MOUNT' ? "text-red-700" : "text-amber-700"
+                                                                                    w.type === 'MOUNT' || w.type === 'MEDIA' || w.type === 'POWER' ? "text-red-700" : "text-amber-700"
                                                                                 )}>
                                                                                     {w.message.split('\n')[0]}
                                                                                 </span>
@@ -557,16 +693,25 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                                         </div>
 
                                                                         {/* Solution / Adapter Suggestion */}
-                                                                        {w.suggestedAdapters && w.suggestedAdapters.length > 0 ? (
-                                                                            <div className="ml-8 text-[11px] bg-white/60 rounded px-2 py-1.5 border border-black/5">
-                                                                                <span className="font-bold text-blue-700 block mb-0.5">Recommended Solution:</span>
-                                                                                <div className="flex items-center gap-1.5 text-blue-900">
-                                                                                    <span className="text-lg">↳</span>
-                                                                                    <span>Add </span>
-                                                                                    <span className="font-bold underline decoration-blue-300 decoration-2 underline-offset-2">
-                                                                                        {w.suggestedAdapters.map(a => a.name).join(' or ')}
-                                                                                    </span>
-                                                                                </div>
+                                                                        {(w.solution || (w.suggestedAdapters && w.suggestedAdapters.length > 0)) ? (
+                                                                            <div className="ml-8 text-[11px] bg-white/60 rounded px-2 py-1.5 border border-black/5 flex flex-col gap-1.5">
+                                                                                {w.solution && (
+                                                                                    <div className="text-amber-900 font-medium whitespace-pre-wrap">
+                                                                                        {w.solution}
+                                                                                    </div>
+                                                                                )}
+                                                                                {w.suggestedAdapters && w.suggestedAdapters.length > 0 && (
+                                                                                    <div>
+                                                                                        <span className="font-bold text-blue-700 block mb-0.5">Recommended Solution:</span>
+                                                                                        <div className="flex items-center gap-1.5 text-blue-900">
+                                                                                            <span className="text-lg">↳</span>
+                                                                                            <span>Add </span>
+                                                                                            <span className="font-bold underline decoration-blue-300 decoration-2 underline-offset-2">
+                                                                                                {w.suggestedAdapters.map(a => a.name).join(' or ')}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
                                                                         ) : (
                                                                             <div className="ml-8 text-[10px] opacity-70 italic">
@@ -582,32 +727,34 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                             </div>
                                         </div>
 
-                                        {/* Action Pills */}
-                                        <div className="flex items-center bg-[#F2F2F7] rounded-[10px] p-0.5 h-8">
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {/* Action Pills */}
+                                            <div className="flex items-center bg-[#F2F2F7] rounded-[10px] p-0.5 h-8">
+                                                <button
+                                                    onClick={() => onQtyChange(masterIdx, -1)}
+                                                    className="w-7 h-7 flex items-center justify-center rounded-[8px] hover:bg-white hover:shadow-sm transition-all text-[#1C1C1E] disabled:opacity-30"
+                                                    disabled={entry.quantity <= 1}
+                                                >
+                                                    <Minus className="w-3.5 h-3.5" />
+                                                </button>
+                                                <span className="w-8 text-center text-[13px] font-bold text-[#1C1C1E] tabular-nums">
+                                                    {entry.quantity}
+                                                </span>
+                                                <button
+                                                    onClick={() => onQtyChange(masterIdx, 1)}
+                                                    className="w-7 h-7 flex items-center justify-center rounded-[8px] hover:bg-white hover:shadow-sm transition-all text-[#1C1C1E]"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+
                                             <button
-                                                onClick={() => onQtyChange(masterIdx, -1)}
-                                                className="w-7 h-7 flex items-center justify-center rounded-[8px] hover:bg-white hover:shadow-sm transition-all text-[#1C1C1E] disabled:opacity-30"
-                                                disabled={entry.quantity <= 1}
+                                                onClick={() => onQtyChange(masterIdx, -entry.quantity)}
+                                                className="p-2 hover:bg-red-50 rounded-full transition-all text-[#C7C7CC] hover:text-red-500"
                                             >
-                                                <Minus className="w-3.5 h-3.5" />
-                                            </button>
-                                            <span className="w-8 text-center text-[13px] font-black text-[#1C1C1E] tabular-nums">
-                                                {entry.quantity}
-                                            </span>
-                                            <button
-                                                onClick={() => onQtyChange(masterIdx, 1)}
-                                                className="w-7 h-7 flex items-center justify-center rounded-[8px] hover:bg-white hover:shadow-sm transition-all text-[#1C1C1E]"
-                                            >
-                                                <Plus className="w-3.5 h-3.5" />
+                                                <X className="w-4 h-4" />
                                             </button>
                                         </div>
-
-                                        <button
-                                            onClick={() => onQtyChange(masterIdx, -entry.quantity)}
-                                            className="p-2 hover:bg-red-50 rounded-full transition-all text-[#C7C7CC] hover:text-red-500"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
                                     </div>
                                     {/* Camera Accessories */}
                                     {item.category === 'CAM' && (() => {
@@ -685,6 +832,28 @@ export function InventoryPanel(props: InventoryPanelProps) {
                     </div >
                 )}
 
+                {/* Professional Advice Section (Pro Tips) */}
+                {proTips.length > 0 && (
+                    <div className="mx-3 mt-4 space-y-2">
+                        <div className="flex items-center gap-2 px-1">
+                            <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                            <span className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider">Professional Advice</span>
+                        </div>
+                        <div className="space-y-2">
+                            {proTips.map((tip, idx) => (
+                                <div
+                                    key={idx}
+                                    className="p-3 rounded-xl bg-[#FDFCFB] border border-[#F2EDE4] shadow-sm animate-in fade-in slide-in-from-bottom-2"
+                                >
+                                    <p className="text-[12px] leading-relaxed text-[#5D5D5B] font-medium italic">
+                                        {tip}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <button
                     onClick={() => setIsCatalogOpen(true)}
                     className="mx-3 mt-4 w-[calc(100%-24px)] py-3 border border-dashed border-[#C6C6C8] rounded-lg text-[#8E8E93] text-[10px] font-bold uppercase hover:bg-[#F2F2F7] transition-all mb-8"
@@ -696,9 +865,9 @@ export function InventoryPanel(props: InventoryPanelProps) {
             {/* Catalog Modal (Ported) */}
             {
                 isCatalogOpen && (
-                    <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/30 backdrop-blur-[2px] animate-in fade-in">
-                        <div className="bg-[#F2F2F7] w-full h-[95%] rounded-t-[16px] overflow-hidden shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300">
-                            <div className="sticky top-0 z-20 bg-white border-b border-[#E5E5EA]">
+                    <div className="absolute inset-0 z-50 flex items-end justify-center bg-[#1A1A1A]/30 backdrop-blur-[2px] animate-in fade-in">
+                        <div className="bg-[var(--background)] w-full h-[99%] rounded-t-[24px] overflow-hidden shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300">
+                            <div className="sticky top-0 z-20 bg-[var(--background)] border-b border-[#E5E5EA]">
                                 <div className="flex justify-between items-center p-3">
                                     <h2 className="font-bold text-sm text-[#1C1C1E]">Add Equipment</h2>
                                     <button onClick={() => setIsCatalogOpen(false)} className="w-7 h-7 flex items-center justify-center bg-[#E5E5EA] rounded-full text-gray-500 font-bold text-sm hover:bg-[#8E8E93] hover:text-white transition-colors">×</button>
@@ -731,7 +900,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                 className={cn(
                                                     "px-2 py-1 rounded-full text-[9px] font-bold border transition-all",
                                                     technicalFilter === f
-                                                        ? "bg-black text-white border-black"
+                                                        ? "bg-[#1A1A1A] text-white border-[#1A1A1A]"
                                                         : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
                                                 )}
                                             >
@@ -746,14 +915,14 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                     <>
                                         <div className="flex gap-2 items-center">
                                             <span className="text-[8px] font-bold text-[#8E8E93] uppercase">Type:</span>
-                                            {['ALL', 'Anamorphic', 'Spherical', 'Zoom', 'Vintage'].map(f => (
+                                            {['ALL', 'Anamorphic', 'Spherical', 'Zoom', 'Vintage', 'Generic'].map(f => (
                                                 <button
                                                     key={f}
                                                     onClick={() => setLensTypeFilter(f as any)}
                                                     className={cn(
                                                         "px-2 py-1 rounded-full text-[9px] font-bold border transition-all",
                                                         lensTypeFilter === f
-                                                            ? "bg-black text-white border-black"
+                                                            ? "bg-[#1A1A1A] text-white border-[#1A1A1A]"
                                                             : "bg-white text-[#8E8E93] border-[#E5E5EA] hover:border-[#8E8E93]"
                                                     )}
                                                 >
@@ -784,7 +953,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                 {/* SUPPORT FILTERS: Subcategories */}
                                 {activeTab === 'SUP' && (
                                     <div className="flex gap-1 flex-wrap">
-                                        {['ALL', 'Accessories', 'Batteries', 'Media', 'Filters', 'Matte Box', 'Follow Focus', 'Wireless Control', 'Monitors', 'Transmitters'].map(f => (
+                                        {['ALL', 'Batteries', 'Media', 'Filters', 'Matte Box', 'Focus', 'Wireless', 'Monitors', 'Support', 'Audio', 'Generic'].map(f => (
                                             <button
                                                 key={f}
                                                 onClick={() => setTechnicalFilter(f)}
@@ -804,7 +973,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                 {/* LIGHT FILTERS: Subcategories */}
                                 {activeTab === 'LIT' && (
                                     <div className="flex gap-1 flex-wrap">
-                                        {['ALL', 'LED', 'Daylight', 'Tungsten', 'Ballast', 'Modifier', 'Accessory'].map(f => (
+                                        {['ALL', 'LED', 'Daylight', 'Tungsten', 'HMI', 'Tube', 'Panel', 'Modifier', 'Stand', 'Grip', 'Control', 'Generic'].map(f => (
                                             <button
                                                 key={f}
                                                 onClick={() => setTechnicalFilter(f)}
@@ -866,7 +1035,6 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                                         // CAMERA FILTERS: by sensor size
                                         if (activeTab === 'CAM' && technicalFilter !== 'ALL') {
-                                            // DB has mixed values, standardizing via script, but checking generic logic
                                             return i.sensor_size === technicalFilter;
                                         }
 
@@ -889,7 +1057,17 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                                         // SUPPORT & LIGHT FILTERS: by subcategory
                                         if ((activeTab === 'SUP' || activeTab === 'LIT') && technicalFilter !== 'ALL') {
-                                            return i.subcategory === technicalFilter;
+                                            const sub = i.subcategory || '';
+                                            if (technicalFilter === 'Filters') return sub.includes('Filter');
+                                            if (technicalFilter === 'Batteries') return sub.includes('Batter');
+                                            if (technicalFilter === 'Media') return sub.includes('Media') || sub.includes('Card');
+                                            if (technicalFilter === 'Matte Box') return sub.toLowerCase().includes('matte');
+                                            if (technicalFilter === 'Focus') return sub.includes('Focus') || sub.includes('FIZ');
+                                            if (technicalFilter === 'Wireless') return sub.includes('Wireless') || sub.includes('Transmitter');
+                                            if (technicalFilter === 'Support') return ['Head', 'Handheld', 'Vest', 'Rods', 'Tripod', 'Gimbal', 'Dolly', 'Slider', 'Fluid Head', 'Tripod Legs'].includes(sub);
+                                            if (technicalFilter === 'Audio') return sub.includes('Microphone') || sub.includes('Recorder');
+                                            if (technicalFilter === 'Generic') return sub === 'Generic';
+                                            return sub === technicalFilter;
                                         }
 
                                         return true;
@@ -934,6 +1112,25 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                                     if (activeTab === 'LNS' || (activeTab === 'SUP' && technicalFilter === 'Filters')) {
                                         filteredItems.forEach(item => {
+                                            // Look up catalog item for isPrivate check
+                                            // In project list, item has equipmentId. In catalog list, item IS the equipment item.
+                                            // We need to support both contexts or ensure we know where we are.
+                                            // This loop is for CATALOG MODAL? No.
+                                            // WAIT - Lines 1022+ is the CATALOG MODAL loop!! 
+                                            // Lines 1113+ is for "Group Logic" inside the modal?
+                                            // Ah, looking at context in previous view_file (1139+ is Custom Toggle)
+                                            // Let's check where the Rendering happens.
+                                            // Lines 1200+ is rendering.
+
+                                            // Let's assume item IS InventoryItem here as it comes from catalog.filter
+                                            const isPrivate = item.isPrivate;
+
+                                            // Don't group custom items - show them standalone so they can be deleted
+                                            if (isPrivate) {
+                                                standaloneItems.push(item);
+                                                return;
+                                            }
+
                                             // Use fuzzy series name for key
                                             const seriesName = getSeriesName(item);
                                             const brand = item.brand || 'Generic';
@@ -950,74 +1147,204 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                                     return (
                                         <div key={cat.id}>
-                                            <h3 className="text-[10px] font-black uppercase text-[#8E8E93] mb-2 px-2 sticky top-0 bg-[#F2F2F7] py-1 z-10 w-full">
-                                                {cat.name} OPTIONS
+                                            <h3 className="text-[10px] font-bold uppercase text-[#8E8E93] mb-2 px-2 sticky top-0 bg-[#F2F2F7] py-1 z-10 w-full flex justify-between items-center">
+                                                <span>{cat.name} OPTIONS</span>
+                                                {/* CUSTOM ITEM TOGGLE */}
+                                                <button
+                                                    onClick={() => setIsCreatingCustom(!isCreatingCustom)}
+                                                    className="text-[#007AFF] text-[9px] font-bold hover:underline"
+                                                >
+                                                    {isCreatingCustom ? 'Cancel Custom' : '+ Add Custom'}
+                                                </button>
                                             </h3>
-                                            <div className="space-y-2">
-                                                {/* RENDER GROUPS */}
-                                                {Object.entries(groupedItems).map(([key, items]) => {
-                                                    const seriesName = getSeriesName(items[0]);
 
-                                                    if (items.length === 1) {
-                                                        // Single item - Render simple row
+                                            {isCreatingCustom ? (
+                                                <div className="p-4 space-y-4 bg-gray-50 rounded-xl m-2 border border-blue-200 shadow-sm animate-in zoom-in-95 duration-200">
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <h3 className="font-bold text-sm text-gray-900">Create Custom Item</h3>
+                                                    </div>
+
+                                                    <div className="space-y-3">
+                                                        <div className="grid grid-cols-2 gap-3">
+                                                            <div>
+                                                                <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Category</label>
+                                                                <select
+                                                                    className="w-full text-xs font-bold text-gray-800 bg-white px-2 py-2 rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                    value={customForm.category}
+                                                                    onChange={(e) => {
+                                                                        const newCat = e.target.value;
+                                                                        setCustomForm({
+                                                                            ...customForm,
+                                                                            category: newCat,
+                                                                            subcategory: 'Generic' // Strictly Generic
+                                                                        });
+                                                                    }}
+                                                                >
+                                                                    {CATEGORIES.map(c => (
+                                                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Subcategory</label>
+                                                                <select
+                                                                    className="w-full text-xs font-bold text-gray-400 bg-gray-100 px-2 py-2 rounded border border-gray-200 cursor-not-allowed"
+                                                                    value="Generic"
+                                                                    disabled
+                                                                >
+                                                                    <option value="Generic">Generic</option>
+                                                                    {customForm.category && SUBCATEGORY_OPTIONS[customForm.category] ? (
+                                                                        SUBCATEGORY_OPTIONS[customForm.category].map(sub => (
+                                                                            <option key={sub} value={sub}>{sub}</option>
+                                                                        ))
+                                                                    ) : (
+                                                                        <option value="General">General</option>
+                                                                    )}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-3">
+                                                            <div>
+                                                                <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Brand</label>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="Generic"
+                                                                    className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-gray-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                                                                    value={customForm.brand}
+                                                                    onChange={(e) => setCustomForm({ ...customForm, brand: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Model / Name</label>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="My Custom Item"
+                                                                    className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-gray-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                                                                    value={customForm.model}
+                                                                    onChange={(e) => setCustomForm({ ...customForm, model: e.target.value })}
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        <div>
+                                                            <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Description (Optional)</label>
+                                                            <textarea
+                                                                className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-gray-200 focus:ring-1 focus:ring-blue-500 outline-none h-20 resize-none"
+                                                                placeholder="Extra details..."
+                                                                value={customForm.description}
+                                                                onChange={(e) => setCustomForm({ ...customForm, description: e.target.value })}
+                                                            />
+                                                        </div>
+
+                                                        <button
+                                                            className="w-full py-3 bg-black text-white font-bold text-xs rounded-lg hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            onClick={handleAddCustom}
+                                                            disabled={!customForm.model.trim()}
+                                                        >
+                                                            Create & Add to Project
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {Object.entries(groupedItems).map(([key, items]) => {
+                                                        const seriesName = getSeriesName(items[0]);
+
+                                                        if (items.length === 1) {
+                                                            // Single item - Render simple row
+                                                            return (
+                                                                <button
+                                                                    key={items[0].id}
+                                                                    onClick={() => handleAddWrapper(items[0])}
+                                                                    className="w-full flex items-center p-3 bg-white rounded-lg active:scale-[0.99] transition-all text-left group hover:shadow-sm border border-transparent hover:border-blue-100"
+                                                                >
+                                                                    <div className="flex-1">
+                                                                        <div className="font-bold text-xs text-[#1C1C1E]">
+                                                                            {items[0].isPrivate && <span className="text-[9px] bg-gray-100 text-gray-500 px-1 rounded mr-1">CUSTOM</span>}
+                                                                            {items[0].name}
+                                                                        </div>
+                                                                        {/* Lens Specs */}
+                                                                        {items[0].category === 'LNS' && (items[0].front_diameter_mm || items[0].weight_kg) && (
+                                                                            <div className="flex items-center gap-2 text-[8px] text-[#8E8E93] font-medium mt-0.5">
+                                                                                {items[0].front_diameter_mm && (
+                                                                                    <span>⌀ {items[0].front_diameter_mm}mm</span>
+                                                                                )}
+                                                                                {items[0].weight_kg && (
+                                                                                    <span>• {items[0].weight_kg}kg</span>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="text-[9px] text-[#C7C7CC] group-hover:text-[#8E8E93]">
+                                                                            {items[0].subcategory || 'General'}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-2">
+                                                                        {items[0].isPrivate && (
+                                                                            <div
+                                                                                onClick={(e) => handleDeleteCustom(items[0].id, e)}
+                                                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors z-10"
+                                                                                title="Delete Custom Item"
+                                                                            >
+                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="text-[#007AFF] text-lg font-light flex items-center justify-center h-6 w-6 rounded-full bg-blue-50 group-hover:bg-blue-600 group-hover:text-white transition-colors">+</div>
+                                                                    </div>
+                                                                </button>
+                                                            )
+                                                        }
+                                                        // Group Card
+                                                        return (
+                                                            <div key={key} className="space-y-1">
+                                                                <LensGroupCard
+                                                                    groupName={seriesName}
+                                                                    brand={items[0].brand || ''}
+                                                                    items={items}
+                                                                    onAddItems={handleSmartAdd}
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {standaloneItems.map(item => {
+                                                        const isPrivate = item.isPrivate; // No need for lookup here in catalog modal
+
                                                         return (
                                                             <button
-                                                                key={items[0].id}
-                                                                onClick={() => handleAddWrapper(items[0])}
+                                                                key={item.id}
+                                                                onClick={() => handleAddWrapper(item)}
                                                                 className="w-full flex items-center p-3 bg-white rounded-lg active:scale-[0.99] transition-all text-left group hover:shadow-sm border border-transparent hover:border-blue-100"
                                                             >
                                                                 <div className="flex-1">
-                                                                    <div className="font-bold text-xs text-[#1C1C1E]">{items[0].name}</div>
-                                                                    {/* Lens Specs */}
-                                                                    {items[0].category === 'LNS' && (items[0].front_diameter_mm || items[0].weight_kg) && (
-                                                                        <div className="flex items-center gap-2 text-[8px] text-[#8E8E93] font-medium mt-0.5">
-                                                                            {items[0].front_diameter_mm && (
-                                                                                <span>⌀ {items[0].front_diameter_mm}mm</span>
-                                                                            )}
-                                                                            {items[0].weight_kg && (
-                                                                                <span>• {items[0].weight_kg}kg</span>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
+                                                                    <div className="font-bold text-xs text-[#1C1C1E]">
+                                                                        {isPrivate && <span className="text-[9px] bg-gray-100 text-gray-500 px-1 rounded mr-1">CUSTOM</span>}
+                                                                        {item.name}
+                                                                    </div>
                                                                     <div className="text-[9px] text-[#C7C7CC] group-hover:text-[#8E8E93]">
-                                                                        {items[0].subcategory || 'General'}
+                                                                        {item.subcategory || 'General'}
+                                                                        {activeTab === 'LNS' && (item as any).coverage && ` • ${(item as any).coverage}`}
                                                                     </div>
                                                                 </div>
-                                                                <div className="text-[#007AFF] text-lg font-light flex items-center justify-center h-6 w-6 rounded-full bg-blue-50 group-hover:bg-blue-600 group-hover:text-white transition-colors">+</div>
+
+                                                                <div className="flex items-center gap-2">
+                                                                    {isPrivate && (
+                                                                        <div
+                                                                            onClick={(e) => handleDeleteCustom(item.id, e)}
+                                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors z-10"
+                                                                            title="Delete Custom Item"
+                                                                        >
+                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="text-[#007AFF] text-lg font-light flex items-center justify-center h-6 w-6 rounded-full bg-blue-50 group-hover:bg-blue-600 group-hover:text-white transition-colors">+</div>
+                                                                </div>
                                                             </button>
                                                         )
-                                                    }
-                                                    // Group Card
-                                                    return (
-                                                        <div key={key} className="space-y-1">
-                                                            <LensGroupCard
-                                                                groupName={seriesName}
-                                                                brand={items[0].brand || ''}
-                                                                items={items}
-                                                                onAddItems={handleSmartAdd}
-                                                            />
-                                                        </div>
-                                                    );
-                                                })}
-
-                                                {/* RENDER STANDALONE */}
-                                                {standaloneItems.map(item => (
-                                                    <button
-                                                        key={item.id}
-                                                        onClick={() => handleAddWrapper(item)}
-                                                        className="w-full flex items-center p-3 bg-white rounded-lg active:scale-[0.99] transition-all text-left group hover:shadow-sm border border-transparent hover:border-blue-100"
-                                                    >
-                                                        <div className="flex-1">
-                                                            <div className="font-bold text-xs text-[#1C1C1E]">{item.name}</div>
-                                                            <div className="text-[9px] text-[#C7C7CC] group-hover:text-[#8E8E93]">
-                                                                {item.subcategory || 'General'}
-                                                                {activeTab === 'LNS' && (item as any).coverage && ` • ${(item as any).coverage}`}
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-[#007AFF] text-lg font-light flex items-center justify-center h-6 w-6 rounded-full bg-blue-50 group-hover:bg-blue-600 group-hover:text-white transition-colors">+</div>
-                                                    </button>
-                                                ))}
-                                            </div>
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -1028,7 +1355,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                 <div className="absolute inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
                                     <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
                                         <div className="text-left mb-6">
-                                            <h3 className="text-xl font-black text-[#1C1C1E] mb-1">Smart Assignment</h3>
+                                            <h3 className="text-xl font-bold text-[#1C1C1E] mb-1">Smart Assignment</h3>
                                             <p className="text-[11px] text-[#8E8E93] font-medium leading-relaxed">
                                                 Adding <span className="text-[#1C1C1E] font-bold">
                                                     {replicationData.items.length === 1 ? replicationData.items[0].name : `${replicationData.items.length} items`}
@@ -1059,7 +1386,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                             <span className="font-bold text-sm text-[#1C1C1E]">Camera {cam}</span>
                                                         </div>
                                                         <div className={cn(
-                                                            "px-2 py-0.5 rounded-[4px] text-[10px] font-black uppercase text-white shadow-sm",
+                                                            "px-2 py-0.5 rounded-[4px] text-[10px] font-bold uppercase text-white shadow-sm",
                                                             getCameraColor(cam as any)
                                                         )}>
                                                             {cam}
@@ -1083,13 +1410,13 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                         <div className="flex gap-4">
                                             <button
                                                 onClick={() => confirmReplication(false)}
-                                                className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-[#8E8E93] hover:bg-[#F2F2F7] rounded-2xl transition-all active:scale-95 border border-[#E5E5EA]"
+                                                className="flex-1 py-4 text-xs font-bold uppercase tracking-widest text-[#8E8E93] hover:bg-[#F2F2F7] rounded-2xl transition-all active:scale-95 border border-[#E5E5EA]"
                                             >
                                                 Skip
                                             </button>
                                             <button
                                                 onClick={() => confirmReplication(true)}
-                                                className="flex-[1.5] py-4 text-xs font-black uppercase tracking-widest bg-[#1C1C1E] text-white rounded-2xl shadow-xl hover:bg-black transition-all active:scale-95"
+                                                className="flex-[1.5] py-4 text-xs font-bold uppercase tracking-widest bg-[#1C1C1E] text-white rounded-2xl shadow-xl hover:bg-[#1A1A1A] transition-all active:scale-95"
                                             >
                                                 Confirm ({replicationTargets.size || 0})
                                             </button>
@@ -1105,7 +1432,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
             {/* AI Confirmation Modal - Compact & Pro with Selection */}
             {
                 draftItems && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#1A1A1A]/60 backdrop-blur-sm animate-in fade-in">
                         <div className="bg-white rounded-xl shadow-2xl w-[90%] max-w-[700px] overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95">
                             {/* Header */}
                             <div className="px-4 py-3 border-b flex justify-between items-center bg-gray-50">
@@ -1136,11 +1463,11 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                     }}
                                                 />
                                             </th>
-                                            <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Model</th>
-                                            <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Iris</th>
-                                            <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">CF</th>
-                                            <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Front</th>
-                                            <th className="px-3 py-2 text-[9px] font-black text-gray-500 uppercase">Weight</th>
+                                            <th className="px-3 py-2 text-[9px] font-bold text-gray-500 uppercase">Model</th>
+                                            <th className="px-3 py-2 text-[9px] font-bold text-gray-500 uppercase">Iris</th>
+                                            <th className="px-3 py-2 text-[9px] font-bold text-gray-500 uppercase">CF</th>
+                                            <th className="px-3 py-2 text-[9px] font-bold text-gray-500 uppercase">Front</th>
+                                            <th className="px-3 py-2 text-[9px] font-bold text-gray-500 uppercase">Weight</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">

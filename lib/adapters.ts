@@ -10,6 +10,7 @@ export interface Adapter {
     from_mount: string; // Lens mount
     to_mount: string;   // Camera mount
     maintains_infinity: boolean;
+    electronic: boolean; // Supports AF/Iris/Metadata
     notes?: string;
     daily_rate_est?: number;
     category: 'Support';
@@ -25,6 +26,7 @@ export const adapters: Adapter[] = [
         from_mount: 'PL',
         to_mount: 'LPL',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Official ARRI adapter. Allows PL lenses on LPL cameras (Alexa 35, Mini LF).',
         daily_rate_est: 50,
         category: 'Support',
@@ -39,6 +41,7 @@ export const adapters: Adapter[] = [
         from_mount: 'PL',
         to_mount: 'E-Mount',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Official Sony PL adapter for E-mount cameras (Venice, FX series).',
         daily_rate_est: 150,
         category: 'Support',
@@ -51,6 +54,7 @@ export const adapters: Adapter[] = [
         from_mount: 'EF',
         to_mount: 'E-Mount',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Electronic adapter with autofocus support. Popular for Canon lenses on Sony.',
         daily_rate_est: 40,
         category: 'Support',
@@ -63,6 +67,7 @@ export const adapters: Adapter[] = [
         from_mount: 'EF',
         to_mount: 'E-Mount',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Electronic adapter optimized for Sigma lenses.',
         daily_rate_est: 25,
         category: 'Support',
@@ -77,6 +82,7 @@ export const adapters: Adapter[] = [
         from_mount: 'PL',
         to_mount: 'RF',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Official Canon adapter for PL lenses on RF mount (C70, C300 Mark III).',
         daily_rate_est: 80,
         category: 'Support',
@@ -89,6 +95,7 @@ export const adapters: Adapter[] = [
         from_mount: 'EF',
         to_mount: 'RF',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Official Canon adapter with full electronic control.',
         daily_rate_est: 30,
         category: 'Support',
@@ -103,6 +110,7 @@ export const adapters: Adapter[] = [
         from_mount: 'PL',
         to_mount: 'RF',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Allows PL lenses on RED RF-mount cameras (Komodo, V-Raptor).',
         daily_rate_est: 100,
         category: 'Support',
@@ -115,6 +123,7 @@ export const adapters: Adapter[] = [
         from_mount: 'LPL',
         to_mount: 'RF',
         maintains_infinity: true,
+        electronic: true,
         notes: 'Allows LPL lenses on RED RF-mount cameras.',
         daily_rate_est: 120,
         category: 'Support',
@@ -129,6 +138,7 @@ export const adapters: Adapter[] = [
         from_mount: 'PL',
         to_mount: 'EF',
         maintains_infinity: true,
+        electronic: false,
         notes: 'Mechanical adapter for PL lenses on EF mount cameras.',
         daily_rate_est: 60,
         category: 'Support',
@@ -141,6 +151,7 @@ export const adapters: Adapter[] = [
         from_mount: 'PL',
         to_mount: 'EF',
         maintains_infinity: true,
+        electronic: false,
         notes: 'Budget-friendly mechanical adapter.',
         daily_rate_est: 35,
         category: 'Support',
@@ -155,6 +166,7 @@ export const adapters: Adapter[] = [
         from_mount: 'Universal (Front Mount)',
         to_mount: 'Universal',
         maintains_infinity: true,
+        electronic: false,
         notes: 'Front-mount anamorphic adapter. Creates 2.39:1 aspect ratio.',
         daily_rate_est: 75,
         category: 'Support',

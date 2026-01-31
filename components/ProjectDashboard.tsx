@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Trash2, Edit, Save } from "lucide-react";
+import { Trash2, Edit, Save, LogOut, User as UserIcon, Users } from "lucide-react";
+import { signOut } from "next-auth/react";
+import Link from "next/link";
 
 // Types for the form
 type ProjectForm = {
@@ -55,13 +57,15 @@ export default function ProjectDashboard({
     onSelectProject,
     onCreateProject,
     onUpdateProject,
-    onDeleteProject
+    onDeleteProject,
+    session
 }: {
     projects: any[],
     onSelectProject: (id: string) => void,
     onCreateProject: (data: any) => void,
     onUpdateProject: (id: string, data: any) => void,
-    onDeleteProject: (id: string) => void
+    onDeleteProject: (id: string) => void,
+    session: any
 }) {
     const [view, setView] = useState<'LIST' | 'CREATE'>('LIST');
     const [formData, setFormData] = useState<ProjectForm>(INITIAL_FORM);
@@ -157,6 +161,30 @@ export default function ProjectDashboard({
     if (view === 'LIST') {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#F2F2F7] p-4 text-[#1C1C1E]">
+                {/* User Header */}
+                <div className="absolute top-4 right-4 flex items-center gap-3 bg-white px-4 py-2 rounded-full shadow-sm border border-[#E5E5EA]">
+                    <Link href="/dashboard" className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-gray-100 rounded-full text-[10px] font-black uppercase transition-colors">
+                        <Users size={14} className="text-[#007AFF]" />
+                        <span>Collaboration</span>
+                    </Link>
+                    <div className="w-px h-4 bg-[#E5E5EA]" />
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-black uppercase tracking-tight text-[#1A1A1A]">{session?.user?.name || "User"}</span>
+                        <span className="text-[8px] text-[#8E8E93] font-medium leading-none">{session?.user?.email}</span>
+                    </div>
+                    <div className="w-8 h-8 bg-[#1A1A1A] rounded-full flex items-center justify-center text-white">
+                        <UserIcon size={14} />
+                    </div>
+                    <div className="w-px h-4 bg-[#E5E5EA]" />
+                    <button
+                        onClick={() => signOut()}
+                        className="p-1.5 hover:bg-red-50 rounded-full text-[#8E8E93] hover:text-[#FF3B30] transition-colors"
+                        title="Logout"
+                    >
+                        <LogOut size={14} />
+                    </button>
+                </div>
+
                 <div className="w-full max-w-md space-y-8">
                     <div className="text-center space-y-2">
                         <h1 className="text-3xl font-black uppercase tracking-tight">CineBrain Pro</h1>
@@ -177,64 +205,9 @@ export default function ProjectDashboard({
                                         className="bg-white p-4 rounded-xl shadow-sm border border-[#E5E5EA] text-left hover:border-[#007AFF] transition-all group cursor-pointer relative"
                                     >
                                         <div className="flex justify-between items-start">
-                                            <h3 className="font-bold text-lg text-[#1C1C1E] group-hover:text-[#007AFF]">{p.name}</h3>
+                                            <h3 className="font-semibold text-lg text-[#1C1C1E] group-hover:text-[#007AFF]">{p.name}</h3>
 
                                             <div className="flex items-center gap-2">
-                                                {/* Project Warnings Badge */}
-                                                {(() => {
-                                                    // Calculate warnings for this project
-                                                    // Note: We need to recreate the validation logic here or lift it.
-                                                    // For now, let's look for known problematic items using a simple heuristic 
-                                                    // or checking a 'hasWarnings' flag if we had one.
-                                                    // Since we don't have the full catalog easily here without prop drilling,
-                                                    // we'll rely on a simple visual check if the name contains "Compatibility".
-                                                    // REAL IMPLEMENTATION: We should pass a `getProjectStatus(p)` prop.
-
-                                                    // However, since I am editing the component directly and don't want to break the interface,
-                                                    // I will add a placeholder warning for the 'Compatibility Test Playground' explicitly 
-                                                    // to match the user's screenshot context, THEN implement the real logic globally later.
-
-                                                    // Actually, the user's screenshot SHOWS a warning icon already. 
-                                                    // This means it IS being rendered somewhere. 
-                                                    // Wait, looking at the code I read (lines 159-212), I DO NOT see the alert icon.
-                                                    // This implies the screenshot might be from a version I haven't fully synced or 
-                                                    // the icon comes from the Title string itself if user added emoji?
-                                                    // "⚠️ Compatibility Test Playground". YES! The emoji is part of the name in my seed script!
-
-                                                    // AHA! The "warning" is just an emoji in the text!
-                                                    // The user THINKS it's a system warning but it's just text.
-                                                    // And my recent seed script ADDED that emoji: "⚠️ Compatibility Test Playground".
-
-                                                    // No wonder "clicking it does nothing". It's just text.
-
-                                                    // I need to:
-                                                    // 1. Detect this "⚠️" or actual warnings.
-                                                    // 2. Render a REAL interactive warning badge.
-
-                                                    const hasWarningEmoji = p.name.includes('⚠️');
-
-                                                    if (hasWarningEmoji) {
-                                                        return (
-                                                            <div className="group/warn relative">
-                                                                <div className="flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold border border-amber-200 cursor-help">
-                                                                    <span>Issues Detected</span>
-                                                                </div>
-                                                                {/* Hover Tooltip */}
-                                                                <div className="absolute right-0 top-6 w-48 bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-50 hidden group-hover/warn:block">
-                                                                    <p className="text-[10px] text-gray-500 mb-1">Passes integrity check?</p>
-                                                                    <div className="text-[11px] font-bold text-red-600 flex items-center gap-1">
-                                                                        <span>• Mount Mismatches found</span>
-                                                                    </div>
-                                                                    <div className="text-[10px] text-blue-600 mt-1">
-                                                                        Open project to resolve detailed alerts.
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    }
-                                                    return null;
-                                                })()}
-
                                                 <span className="text-[10px] font-mono bg-[#F2F2F7] px-1.5 py-0.5 rounded text-[#8E8E93]">v{p.version || 1}</span>
                                                 <button onClick={(e) => handleEdit(p, e)} className="p-1.5 hover:bg-[#F2F2F7] rounded text-[#8E8E93] hover:text-[#007AFF]">
                                                     <Edit className="w-3.5 h-3.5" />

@@ -1,13 +1,26 @@
 "use client";
 
-import { useState, useEffect, useMemo, useTransition } from "react";
+import { useState, useEffect, useMemo, useTransition, useOptimistic } from "react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import ProjectDashboard from "./ProjectDashboard";
-import { createProjectAction, updateProjectAction, deleteProjectAction, addKitItemAction, updateKitItemAction, deleteKitItemAction, checkForUpdatesAction } from "@/app/actions";
+import {
+    createProjectAction,
+    updateProjectAction,
+    deleteProjectAction,
+    addKitItemAction,
+    updateKitItemAction,
+    deleteKitItemAction,
+    checkForUpdatesAction,
+    getProjectItemsAction,
+    getProjectTeamAction,
+    inviteUserAction
+} from "@/app/actions";
 import { generateCineListPDF, type PDFItem } from "@/lib/pdf-generator";
-import { X, Layout, FileText, Camera, ShieldCheck, Lightbulb, UserPlus, RefreshCw } from "lucide-react";
+import { X, Layout, FileText, Camera, ShieldCheck, Lightbulb, UserPlus, RefreshCw, Users, RefreshCcw } from "lucide-react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useProjectSync } from "@/hooks/useProjectSync";
+import Link from "next/link";
 import { CATEGORIES, isCameraBody, getCameraColor } from "@/lib/inventory-utils";
 
 // Sub Components
@@ -28,41 +41,51 @@ export type InventoryItem = {
     category: string; // "CAM", "LNS"
     subcategory?: string | null; // "Bodies", "Primes"
     subSubcategory?: string | null; // Reserved for future use
-    coverage?: string | null; // For LNS: S35/FF/LF sensor coverage
-    parentId?: string | null;
-    isAIGenerated?: boolean;
-    isVerified?: boolean;
+    coverage?: string | null;
     mount?: string | null;
+    lens_type?: string | null;
     sensor_size?: string | null;
-    lens_type?: string | null; // Anamorphic, Spherical
-    aperture?: string | null;
+    sensor_type?: string | null;
     focal_length?: string | null;
+    aperture?: string | null;
     weight_kg?: number | null;
     front_diameter_mm?: number | null;
     image_circle_mm?: number | null;
-    sensor_type?: string | null;
-    description?: string | null;
+    isAiResearched?: boolean;
+    isVerified?: boolean;
+    status?: 'PENDING' | 'APPROVED';
+    sourceUrl?: string | null;
+    parentId?: string | null;
     imageUrl?: string | null;
-};
+    description?: string | null;
+    specs_json?: string | null;
+    isPrivate?: boolean;
+    ownerId?: string | null;
+}
 
-// State Shape
 export type InventoryEntry = {
     id: string;
-    equipmentId: string;
-    assignedCam: string; // "A", "B"...
+    equipmentId: string | null;
+    name: string;
+    brand: string;
+    model?: string | null;
+    category: string;
+    subcategory: string;
+    assignedCam: string;
     quantity: number;
-    selectedOptions: string[]; // IDs of children (Extensions)
-    configJson?: string | null;
-    notes?: string | null;
-    customName?: string | null;
-};
+    notes: string;
+    configJson: string;
+    parentId: string | null; // For hierarchical support
+    sensor_size?: string | null;
+    weight_kg?: number | null;
+    front_diameter_mm?: number | null;
+}
 
-// Extended Project Type
 export type ProjectWithItems = {
     id: string;
-    items: InventoryEntry[];
     name: string;
     productionCo?: string | null;
+    producer?: string | null;
     director?: string | null;
     cinematographer?: string | null;
     assistantCamera?: string | null;
@@ -71,20 +94,18 @@ export type ProjectWithItems = {
     shootDates?: string | null;
     contactsJson?: string | null;
     datesJson?: string | null;
+    items: any[];
     version?: number;
-    [key: string]: any;
-};
+    updatedAt: Date;
+}
 
-// Constant for stability
-const EMPTY_ARRAY: InventoryEntry[] = [];
-
-export default function CineBrainInterface({ initialItems: catalog, initialProjects }: { initialItems: InventoryItem[], initialProjects?: any[], onAddItems?: (items: InventoryItem[]) => void; customSecondary?: React.ReactNode; }) {
-    const searchParams = useSearchParams();
+export default function CineBrainInterface({ initialItems, initialProjects, session }: { initialItems: InventoryItem[], initialProjects: any[], session: any }) {
     const router = useRouter();
     const pathname = usePathname();
-
-    // --- GLOBAL STATE ---
+    const searchParams = useSearchParams();
     const projectParam = searchParams.get('project');
+
+    // Projects & Selection
     const [activeProjectId, _setActiveProjectId] = useState<string | null>(projectParam);
     const [projects, setProjects] = useState<ProjectWithItems[]>((initialProjects as ProjectWithItems[]) || []);
 
@@ -92,8 +113,7 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
     const [activeMobileTab, setActiveMobileTab] = useState<'info' | 'docs' | 'gear'>('gear');
     const [warnings, setWarnings] = useState<string[]>([]);
 
-    // Modal State (Managed here for now)
-    const [configEntry, setConfigEntry] = useState<InventoryEntry | null>(null);
+    // Modal State
     const [activeSheet, setActiveSheet] = useState<{
         type: 'b-cam' | 'invite' | null;
         itemName?: string;
@@ -101,23 +121,11 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
     }>({ type: null });
 
     const [lastSyncVersion, setLastSyncVersion] = useState<string>("");
+    const [isSaving, setIsSaving] = useState(false);
+    const [isPending, startTransition] = useTransition();
 
     // --- LIVE SYNC POLLING ---
-    useEffect(() => {
-        if (!activeProjectId) return;
-
-        const interval = setInterval(async () => {
-            const res = await checkForUpdatesAction(activeProjectId, lastSyncVersion);
-            if (res.changed) {
-                console.log("Remote changes detected, syncing...");
-                // Refresh the whole page via router to keep it simple and correct
-                router.refresh();
-                if (res.version) setLastSyncVersion(res.version);
-            }
-        }, 10000); // 10 seconds
-
-        return () => clearInterval(interval);
-    }, [activeProjectId, lastSyncVersion, router]);
+    const { setLastVersion } = useProjectSync(activeProjectId);
 
     const [isAdminCatalogOpen, setIsAdminCatalogOpen] = useState(false);
 
@@ -145,286 +153,203 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
     }, [initialProjects]);
 
     // --- DERIVED STATE ---
-    const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
-    const inventory: InventoryEntry[] = useMemo(() => {
-        if (!activeProject) return EMPTY_ARRAY;
-        const rawItems = (activeProject.items as any[]) || [];
+    const activeProject = activeProjectId ? (projects.find(p => p.id === activeProjectId) || null) : null;
+    const items = useMemo(() => activeProject?.items || [], [activeProject]);
 
-        return rawItems.map(item => {
-            // Ensure selectedOptions is always derived from configJson if available
-            let selectedOptions = item.selectedOptions || [];
-            if (item.configJson) {
-                try {
-                    const config = JSON.parse(item.configJson);
-                    if (config.selectedOptions) {
-                        selectedOptions = config.selectedOptions;
-                    }
-                } catch (e) {
-                    // Ignore parse errors
-                }
+    const [optimisticItems, addOptimisticItem] = useOptimistic(
+        items,
+        (currentItems: any[], action: { type: 'add' | 'delete' | 'update', payload: any }) => {
+            switch (action.type) {
+                case 'add':
+                    return [...currentItems, action.payload];
+                case 'delete':
+                    return currentItems.filter((item: any) => item.id !== action.payload);
+                case 'update':
+                    return currentItems.map((item: any) =>
+                        item.id === action.payload.id ? { ...item, ...action.payload.updates } : item
+                    );
+                default:
+                    return currentItems;
             }
+        }
+    );
+
+    const inventory = useMemo(() => {
+        return (optimisticItems as any[]).map(item => ({
+            id: item.id,
+            equipmentId: item.equipmentId,
+            name: item.equipment?.name || item.customName || "Unknown",
+            brand: item.equipment?.brand || item.customBrand || "",
+            model: item.equipment?.model || item.customModel || "",
+            category: item.equipment?.category || item.customCategory || "MISC",
+            subcategory: item.equipment?.subcategory || item.customSubcategory || "",
+            assignedCam: item.assignedCam || "A",
+            quantity: item.quantity || 1,
+            notes: item.notes || "",
+            configJson: item.configJson || "{}",
+            parentId: item.parentId,
+            sensor_size: item.equipment?.sensor_size,
+            weight_kg: item.equipment?.weight_kg,
+            front_diameter_mm: item.equipment?.front_diameter_mm,
+            specs_json: item.equipment?.specs_json
+        }));
+    }, [optimisticItems]);
+
+    // --- ACTIONS ---
+    const handleAddEquipment = async (item: InventoryItem, targetCam?: string) => {
+        if (!activeProjectId) return;
+
+        const bodyItems = inventory.filter(i => isCameraBody(initialItems.find(c => c.id === i.equipmentId)));
+
+        // Auto-assign logic for bodies if no targetCam provided
+        let camToAssign = targetCam;
+        if (!camToAssign) {
+            if (isCameraBody(item)) {
+                // Find highest current cam letter
+                const camLetters = bodyItems.map(i => i.assignedCam).filter(c => /^[A-Z]$/.test(c));
+                if (camLetters.length === 0) {
+                    camToAssign = "A";
+                } else {
+                    const maxChar = Math.max(...camLetters.map(c => c.charCodeAt(0)));
+                    camToAssign = String.fromCharCode(maxChar + 1);
+                }
+            } else {
+                camToAssign = "A";
+            }
+        }
+
+        startTransition(async () => {
+            addOptimisticItem({
+                type: 'add',
+                payload: {
+                    id: 'temp-' + crypto.randomUUID(),
+                    equipmentId: item.id,
+                    equipment: item,
+                    assignedCam: camToAssign,
+                    quantity: 1,
+                    configJson: "{}"
+                }
+            });
+
+            setIsSaving(true);
+            const res = await addKitItemAction(activeProjectId, {
+                catalogId: item.id,
+                assignedCam: camToAssign,
+                quantity: 1,
+                configJson: "{}"
+            });
+            if (res.success) {
+                router.refresh();
+            } else {
+                alert(res.error);
+            }
+            setIsSaving(false);
+        });
+    };
+
+    const handleDeleteEntry = async (id: string) => {
+        startTransition(async () => {
+            addOptimisticItem({ type: 'delete', payload: id });
+            setIsSaving(true);
+            const res = await deleteKitItemAction(id);
+            if (res.success) {
+                router.refresh();
+            }
+            setIsSaving(false);
+        });
+    };
+
+    const handleUpdateEntry = async (id: string, updates: any) => {
+        startTransition(async () => {
+            addOptimisticItem({ type: 'update', payload: { id, updates } });
+            setIsSaving(true);
+            const res = await updateKitItemAction(id, updates);
+            if (res.success) {
+                router.refresh();
+            }
+            setIsSaving(false);
+        });
+    };
+
+    const handleToggleOption = (entryIdx: number, childId: string) => {
+        const entry = inventory[entryIdx];
+        if (!entry) return;
+        const config = JSON.parse(entry.configJson || "{}");
+        const options = config.options || [];
+        const newOptions = options.includes(childId)
+            ? options.filter((id: string) => id !== childId)
+            : [...options, childId];
+        handleUpdateEntry(entry.id, { configJson: JSON.stringify({ ...config, options: newOptions }) });
+    };
+
+    const handleQtyChange = (entryIdx: number, delta: number) => {
+        const entry = inventory[entryIdx];
+        if (!entry) return;
+        const newQty = entry.quantity + delta;
+        if (newQty <= 0) {
+            handleDeleteEntry(entry.id);
+        } else {
+            handleUpdateEntry(entry.id, { quantity: newQty });
+        }
+    };
+
+    const handleSetConfigEntry = (entry: any) => {
+        handleUpdateEntry(entry.id, { configJson: entry.configJson });
+    };
+
+    const handleExportPDF = async () => {
+        if (!activeProject) return;
+        const pdfData: PDFItem[] = inventory.map(item => {
+            const series = item.category === 'LNS'
+                ? (item.model || item.name.replace(/\s*\d+\s*mm.*/gi, '').trim())
+                : null;
+
             return {
-                ...item,
-                selectedOptions
+                name: item.name,
+                brand: item.brand,
+                model: item.model,
+                series,
+                level: item.parentId ? 1 : 0,
+                assignedCam: item.assignedCam,
+                category: item.category,
+                sensor_size: item.sensor_size,
+                weight_kg: item.weight_kg,
+                front_diameter_mm: item.front_diameter_mm,
+                quantity: item.quantity,
+                specs_json: item.specs_json
             };
         });
-    }, [activeProject]);
-
-    const updateInventory = (newItems: InventoryEntry[]) => {
-        setProjects(prev => prev.map(p =>
-            p.id === activeProjectId ? { ...p, items: newItems } : p
-        ));
+        const url = await generateCineListPDF(pdfData, activeProject as any);
+        window.open(url, '_blank');
     };
 
-    const activeCameras = useMemo(() => {
-        const cams = new Set<string>();
-        inventory.forEach(i => cams.add(i.assignedCam));
-        return Array.from(cams).sort();
-    }, [inventory]);
-
-    // --- UTILS ---
-    // Helper: Find next available camera letter (A, B, C...)
-    // Helper: Find next available camera letter (A, B, C...)
-    const getNextAvailableLetter = (currentInv: InventoryEntry[]) => {
-        const used = new Set<string>();
-        currentInv.forEach(entry => {
-            // Only consider a letter 'taken' if a CAMERA BODY is assigned to it.
-            // If only lenses/accessories are there, we count it as "Available for Body Assignment".
-            const item = catalog.find(i => i.id === entry.equipmentId);
-            if (item && isCameraBody(item)) {
-                used.add(entry.assignedCam);
-            }
-        });
-        const all = ['A', 'B', 'C', 'D', 'E'];
-        // If A has lenses but no body, it WON'T be in `used`, so we return A. 
-        // This solves "First camera B" issue.
-        return all.find(L => !used.has(L)) || 'Z';
+    const handleUpdateMetadata = async (metadata: any) => {
+        if (!activeProjectId) return;
+        setIsSaving(true);
+        const res = await updateProjectAction(activeProjectId, metadata);
+        if (res.success) {
+            router.refresh();
+        }
+        setIsSaving(false);
     };
 
-    // --- HANDLERS ---
     const handleCreateProject = async (data: any) => {
+        setIsSaving(true);
         const res = await createProjectAction(data);
         if (res.success && res.project) {
             setActiveProjectId(res.project.id);
             router.refresh();
-        } else {
-            alert(`Error creating project: ${res.error}`);
         }
-    };
-
-    const handleUpdateProject = async (id: string, data: any) => {
-        const res = await updateProjectAction(id, data);
-        if (res.success) {
-            router.refresh();
-        } else {
-            alert(`Error updating project: ${res.error}`);
-        }
+        setIsSaving(false);
     };
 
     const handleDeleteProject = async (id: string) => {
+        if (!confirm("Are you sure?")) return;
         const res = await deleteProjectAction(id);
         if (res.success) {
-            if (id === activeProjectId) {
-                router.push(pathname);
-                router.refresh();
-                setActiveProjectId(null);
-            } else {
-                router.refresh();
-            }
-        } else {
-            alert(`Error deleting project: ${res.error}`);
-        }
-    };
-
-    const handleAddItem = async (item: InventoryItem, targetCam?: string) => {
-        let finalCam = 'A';
-        // console.log("HandleAddItem Called:", { item, targetCam, activeCameras, isBody: isCameraBody(item) });
-
-        // Target Cam Logic
-        if (targetCam) {
-            finalCam = targetCam;
-        } else {
-            // New logic: Check if Camera Body and ALL filter -> Auto Increment
-            // But we don't have access to the local filter of InventoryPanel easily
-            // UNLESS we assume InventoryPanel passed 'undefined' as targetCam meaning "Auto".
-            // Since we can't see the filter here easily without lifting state back up,
-            // we will rely on a heuristic: IF targetCam is UNDEFINED, assume AUTO logic for Bodies.
-            if (isCameraBody(item)) {
-                finalCam = getNextAvailableLetter(inventory);
-            }
-            // Logic gap: If user is on "CAM B" tab in InventoryPanel, they expect it to go to B.
-            // The InventoryPanel should pass the *current filter* as targetCam.
-            // I updated InventoryPanel to pass `cameraFilter` as targetCam if not ALL.
-            // So if targetCam is undefined, it means filter was ALL.
-        }
-
-
-        if (activeProjectId) {
-            try {
-                const res = await addKitItemAction(activeProjectId, {
-                    equipmentId: item.id,
-                    assignedCam: finalCam,
-                    quantity: 1,
-                    configJson: "{}"
-                });
-                if (res.success) {
-                    // Delay refresh to allow sheet UI to stabilize if needed
-                    setTimeout(() => router.refresh(), 500);
-                } else {
-                    // Database save failed - fallback to local mode (NO REFRESH!)
-                    console.warn('Database save failed, using local mode:', res.error);
-                    const newItem: InventoryEntry = {
-                        id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                        equipmentId: item.id,
-                        assignedCam: finalCam,
-                        quantity: 1,
-                        selectedOptions: [],
-                        configJson: "{}"
-                    };
-                    updateInventory([...inventory, newItem]);
-                }
-            } catch (e: any) {
-                // Exception occurred - fallback to local mode (NO REFRESH!)
-                console.warn('Exception during database save, using local mode:', e.message);
-                const newItem: InventoryEntry = {
-                    id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                    equipmentId: item.id,
-                    assignedCam: finalCam,
-                    quantity: 1,
-                    selectedOptions: [],
-                    configJson: "{}"
-                };
-                updateInventory([...inventory, newItem]);
-            }
-        } else {
-            // Local Sandbox
-            const newItem: InventoryEntry = {
-                id: Math.random().toString(36).substr(2, 9),
-                equipmentId: item.id,
-                assignedCam: finalCam,
-                quantity: 1,
-                selectedOptions: [],
-                configJson: "{}"
-            };
-            const newProjects = projects.map(p =>
-                p.id === activeProjectId ? { ...p, items: [...p.items, newItem] } : p
-            );
-            setProjects(newProjects);
-        }
-    };
-
-    const handleQtyChange = async (entryIdx: number, delta: number) => {
-        const entry = inventory[entryIdx];
-        if (!entry) return;
-        const newQty = Math.max(0, entry.quantity + delta);
-
-        if (activeProjectId) {
-            try {
-                if (newQty === 0) await deleteKitItemAction(entry.id);
-                else await updateKitItemAction(entry.id, { quantity: newQty });
-                router.refresh();
-            } catch (e: any) {
-                // Database operation failed - fallback to local mode
-                console.warn('Database operation failed, using local mode:', e.message);
-                const next = [...inventory];
-                if (newQty === 0) {
-                    updateInventory(next.filter((_, i) => i !== entryIdx));
-                } else {
-                    next[entryIdx] = { ...entry, quantity: newQty };
-                    updateInventory(next);
-                }
-            }
-        } else {
-            const next = [...inventory];
-            if (newQty === 0) {
-                updateInventory(next.filter((_, i) => i !== entryIdx));
-            } else {
-                next[entryIdx] = { ...entry, quantity: newQty };
-                updateInventory(next);
-            }
-        }
-    };
-
-    const handleToggleOption = async (entryIdx: number, childId: string) => {
-        const next = [...inventory];
-        const entry = next[entryIdx];
-        if (!entry) return;
-
-        const currentOptions = entry.selectedOptions || [];
-        const hasOption = currentOptions.includes(childId);
-        const newOptions = hasOption
-            ? currentOptions.filter(o => o !== childId)
-            : [...currentOptions, childId];
-
-        // Update local state for immediate feedback
-        next[entryIdx] = {
-            ...entry,
-            selectedOptions: newOptions
-        };
-        updateInventory(next);
-
-        // Persist to Server via configJson
-        if (activeProjectId) {
-            const currentConfig = JSON.parse(entry.configJson || '{}');
-            const newConfig = { ...currentConfig, selectedOptions: newOptions };
-            const jsonStr = JSON.stringify(newConfig);
-
-            await updateKitItemAction(entry.id, { configJson: jsonStr });
+            setActiveProjectId(null);
             router.refresh();
         }
-    };
-
-    const handleSaveConfig = async (id: string, updates: any) => {
-        const item = inventory.find(i => i.id === id);
-        if (!item) return;
-
-        const currentConfig = JSON.parse(item.configJson || '{}');
-        const newConfig = { ...currentConfig, ...updates };
-        const jsonStr = JSON.stringify(newConfig);
-
-        // Optimistic
-        const next = inventory.map(i => i.id === id ? { ...i, configJson: jsonStr } : i);
-        updateInventory(next);
-
-        if (activeProjectId) {
-            await updateKitItemAction(id, { configJson: jsonStr });
-        }
-    };
-
-    const handleExport = async () => {
-
-        // Sort inventory for cleaner PDF
-        const sortedInventory = [...inventory].sort((a, b) => {
-            // 1. Camera (A, B...)
-            if (a.assignedCam !== b.assignedCam) return a.assignedCam.localeCompare(b.assignedCam);
-
-            const itemA = catalog.find(i => i.id === a.equipmentId);
-            const itemB = catalog.find(i => i.id === b.equipmentId);
-
-            // 2. Category Priority
-            const catOrder = ['CAM', 'LNS', 'FLT', 'SUP', 'MON', 'LGT', 'AUD', 'GRP'];
-            const idxA = catOrder.indexOf(itemA?.category || '');
-            const idxB = catOrder.indexOf(itemB?.category || '');
-
-            // Use 999 for unknown categories to push them to end
-            const rankA = idxA === -1 ? 999 : idxA;
-            const rankB = idxB === -1 ? 999 : idxB;
-
-            if (rankA !== rankB) return rankA - rankB;
-
-            // 3. Name
-            return (itemA?.name || '').localeCompare(itemB?.name || '');
-        });
-
-        const pdfItems: PDFItem[] = sortedInventory.map(entry => {
-            const item = catalog.find(i => i.id === entry.equipmentId);
-            return {
-                name: `[${entry.assignedCam}] ${item?.name || 'Unknown'} (x${entry.quantity})`,
-                level: 0
-            };
-        });
-        const url = await generateCineListPDF(pdfItems, activeProject || null);
-        window.open(url, '_blank');
     };
 
     // --- RENDER ---
@@ -434,168 +359,150 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
                 projects={projects}
                 onSelectProject={setActiveProjectId}
                 onCreateProject={handleCreateProject}
-                onUpdateProject={handleUpdateProject}
+                onUpdateProject={handleUpdateMetadata}
                 onDeleteProject={handleDeleteProject}
+                session={session}
             />
         );
     }
 
-    if (!activeProject) {
-        // Project ID exists but project not found (deleted? invalid link?)
-        // Auto-redirect to dashboard
-        return (
-            <div className="h-screen w-screen flex items-center justify-center bg-[#F2F2F7]">
-                <div className="text-center">
-                    <h2 className="text-xl font-bold text-[#1C1C1E]">Project Not Found</h2>
-                    <button
-                        onClick={() => setActiveProjectId(null)}
-                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold"
-                    >
-                        Return to Dashboard
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="h-screen w-screen flex flex-col md:flex-row bg-[#F2F2F7] md:overflow-hidden text-[#1C1C1E]">
-            {/* --- DESKTOP LAYOUT (Grid) --- */}
-            <div className="hidden md:contents">
-                {/* 1. Project Info (Left, Fixed Width) */}
-                <div className="w-[300px] h-full flex-none overflow-hidden border-r border-[#E5E5EA] bg-white">
-                    <ProjectMetadataPanel
-                        project={activeProject}
-                        onUpdateProject={handleUpdateProject}
-                        onInviteTeam={() => setActiveSheet({ type: 'invite' })}
-                    />
-                </div>
-
-                {/* 2. Documents (Center, Flexible) */}
-                <div className="flex-1 h-full min-w-[300px] overflow-hidden bg-[#F2F2F7]">
-                    <div className="h-full max-w-3xl mx-auto border-x border-[#E5E5EA] bg-white">
-                        <DocumentsPanel
-                            project={activeProject}
-                            onExport={handleExport}
-                        />
+        <div className="h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col font-sans overflow-hidden">
+            {/* Header */}
+            <header className="h-16 border-b border-[#E5E5EA] bg-white/80 backdrop-blur-xl flex items-center justify-between px-6 shrink-0 z-50">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setActiveProjectId(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-gray-400" />
+                    </button>
+                    <div>
+                        <div className="text-[12px] text-[#1A1A1A] font-medium">{session?.user?.name || session?.user?.email}</div>
                     </div>
                 </div>
 
-                {/* 3. Inventory (Right, Fixed Width) */}
-                <div className="w-[420px] h-full flex-none overflow-hidden border-l border-[#E5E5EA] bg-white">
-                    <InventoryPanel
-                        inventory={inventory}
-                        catalog={catalog}
-                        warnings={warnings}
-                        onAddItem={handleAddItem}
-                        onToggleOption={handleToggleOption}
-                        onQtyChange={handleQtyChange}
-                        onUpdateItem={handleSaveConfig}
-                        onSetConfigEntry={setConfigEntry}
-                    />
-                </div>
-            </div>
-
-            {/* --- MOBILE LAYOUT (Tabs) --- */}
-            <div className="md:hidden flex flex-col h-full overflow-hidden">
-                {/* Mobile Header */}
-                <header className="flex-none bg-white p-4 border-b border-[#E5E5EA] flex justify-between items-center">
-                    <div className="font-black uppercase tracking-tight text-sm truncate max-w-[200px]">
-                        {activeProject.name}
+                <div className="flex items-center gap-3">
+                    <div className="flex gap-2">
+                        <Link href="/dashboard" className="text-[10px] font-bold bg-gray-100 hover:bg-gray-200 text-black px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors">
+                            <Users size={12} /> COLLABORATION
+                        </Link>
+                        <button onClick={() => setActiveProjectId(null)} className="text-[10px] font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full transition-colors">EXIT</button>
                     </div>
-                    <button onClick={() => setActiveProjectId(null)} className="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded">EXIT</button>
-                </header>
 
-                <div className="flex-1 overflow-hidden relative">
-                    {activeMobileTab === 'info' && (
+                    <div className="w-px h-4 bg-white/10 mx-2" />
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setActiveSheet({ type: 'invite' })}
+                            className="bg-white text-black px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-tight flex items-center gap-2 hover:bg-gray-200 transition-colors"
+                        >
+                            <UserPlus size={12} /> Invite Crew
+                        </button>
+                        <button
+                            onClick={() => setIsAdminCatalogOpen(true)}
+                            className="bg-white/5 hover:bg-white/10 text-white/40 hover:text-white p-1.5 rounded-full transition-all"
+                            title="Catalog Admin"
+                        >
+                            <ShieldCheck size={16} />
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            {/* Main Application Interface */}
+            <main className="flex-1 flex overflow-hidden relative">
+                <div className="hidden lg:flex w-[350px] border-r border-[#E5E5EA] flex-col shrink-0 bg-white h-full z-10">
+                    {/* Scrollable Project Metadata */}
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 custom-scrollbar">
                         <ProjectMetadataPanel
-                            project={activeProject}
-                            onUpdateProject={handleUpdateProject}
+                            project={activeProject!}
+                            onUpdateProject={async (id, data) => handleUpdateMetadata(data)}
                             onInviteTeam={() => setActiveSheet({ type: 'invite' })}
                         />
-                    )}
-                    {activeMobileTab === 'docs' && (
-                        <DocumentsPanel project={activeProject} onExport={handleExport} />
-                    )}
-                    {activeMobileTab === 'gear' && (
-                        <InventoryPanel
-                            inventory={inventory}
-                            catalog={catalog}
-                            warnings={warnings}
-                            onAddItem={handleAddItem}
-                            onToggleOption={handleToggleOption}
-                            onQtyChange={handleQtyChange}
-                            onUpdateItem={handleSaveConfig}
-                            onSetConfigEntry={setConfigEntry}
-                            onOpenAdmin={() => setIsAdminCatalogOpen(true)}
+                    </div>
+                    {/* Pinned Documents Area (Pinned to sidebar bottom) */}
+                    <div className="shrink-0 p-6 pt-0 pb-10">
+                        <div className="h-[2px] bg-[#F2F2F7] mb-6 w-full rounded-full opacity-50"></div>
+                        <DocumentsPanel
+                            project={activeProject!}
+                            onExport={handleExportPDF}
                         />
-                    )}
+                    </div>
                 </div>
 
-                {/* Bottom Tab Bar */}
-                <nav className="flex-none bg-white border-t border-[#E5E5EA] pb-safe">
-                    <div className="flex justify-around items-center h-14">
-                        <button
-                            onClick={() => setActiveMobileTab('info')}
-                            className={cn("flex flex-col items-center gap-1 w-16", activeMobileTab === 'info' ? "text-blue-600" : "text-gray-400")}
-                        >
-                            <Layout size={20} strokeWidth={activeMobileTab === 'info' ? 2.5 : 2} />
-                            <span className="text-[9px] font-bold uppercase">Info</span>
-                        </button>
-                        <button
-                            onClick={() => setActiveMobileTab('docs')}
-                            className={cn("flex flex-col items-center gap-1 w-16", activeMobileTab === 'docs' ? "text-blue-600" : "text-gray-400")}
-                        >
-                            <FileText size={20} strokeWidth={activeMobileTab === 'docs' ? 2.5 : 2} />
-                            <span className="text-[9px] font-bold uppercase">Docs</span>
-                        </button>
+                {/* Center Content: Inventory List */}
+                <div className="flex-1 flex flex-col min-w-0 bg-[var(--background)] overflow-hidden">
+                    <div className="flex-1 flex flex-col overflow-y-auto">
+                        <div className="max-w-5xl mx-auto w-full flex flex-col p-6 min-h-full">
+                            <InventoryPanel
+                                inventory={inventory}
+                                catalog={initialItems}
+                                warnings={warnings}
+                                onAddItem={handleAddEquipment}
+                                onUpdateItem={handleUpdateEntry}
+                                onToggleOption={handleToggleOption}
+                                onQtyChange={handleQtyChange}
+                                onSetConfigEntry={handleSetConfigEntry}
+                                onOpenAdmin={() => setIsAdminCatalogOpen(true)}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Mobile Tab Bar */}
+                <div className="lg:hidden h-16 border-t border-[#E5E5EA] bg-white flex items-center justify-around shrink-0 z-50">
+                    <button
+                        onClick={() => setActiveMobileTab('gear')}
+                        className={cn("flex flex-col items-center gap-1", activeMobileTab === 'gear' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                    >
+                        <Camera size={20} />
+                        <span className="text-[9px] font-bold uppercase">Gear</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveMobileTab('info')}
+                        className={cn("flex flex-col items-center gap-1", activeMobileTab === 'info' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                    >
+                        <Layout size={20} />
+                        <span className="text-[9px] font-bold uppercase">Info</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveMobileTab('docs')}
+                        className={cn("flex flex-col items-center gap-1", activeMobileTab === 'docs' ? "text-[#007AFF]" : "text-[#8E8E93]")}
+                    >
+                        <FileText size={20} />
+                        <span className="text-[9px] font-bold uppercase">Docs</span>
+                    </button>
+                </div>
+
+                {/* Mobile Overlays for Info/Docs */}
+                {activeMobileTab !== 'gear' && (
+                    <div className="lg:hidden absolute inset-0 bg-[#050505] z-40 overflow-y-auto p-6 animate-in slide-in-from-bottom duration-300">
                         <button
                             onClick={() => setActiveMobileTab('gear')}
-                            className={cn("flex flex-col items-center gap-1 w-16", activeMobileTab === 'gear' ? "text-blue-600" : "text-gray-400")}
+                            className="absolute top-4 right-4 bg-white/10 p-2 rounded-full"
                         >
-                            <Camera size={20} strokeWidth={activeMobileTab === 'gear' ? 2.5 : 2} />
-                            <span className="text-[9px] font-bold uppercase">Gear</span>
+                            <X size={20} />
                         </button>
-                    </div>
-                </nav>
-            </div>
 
-
-
-            {/* --- GLOBAL MODALS --- */}
-
-            {configEntry && (
-                <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-white rounded-t-[16px] p-5 w-full md:max-w-[430px] animate-in slide-in-from-bottom shadow-xl">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-lg font-black uppercase tracking-tight">Configuration</h2>
-                            <button onClick={() => setConfigEntry(null)} className="p-2 bg-[#F2F2F7] rounded-full text-[#8E8E93]"><X className="w-4 h-4" /></button>
-                        </div>
-                        <div className="space-y-4">
-                            {/* Mount */}
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold uppercase text-[#8E8E93]">Lens Mount</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {['PL', 'LPL', 'EF', 'E-Mount'].map(m => (
-                                        <button
-                                            key={m}
-                                            onClick={() => handleSaveConfig(configEntry.id, { mount: m })}
-                                            className={cn(
-                                                "py-3 rounded-lg text-sm font-bold transition-all border",
-                                                JSON.parse(configEntry.configJson || '{}').mount === m
-                                                    ? "bg-[#1C1C1E] text-white border-[#1C1C1E]"
-                                                    : "bg-white text-[#8E8E93] border-[#E5E5EA]"
-                                            )}
-                                        >
-                                            {m}
-                                        </button>
-                                    ))}
-                                </div>
+                        {activeMobileTab === 'info' && (
+                            <div className="mt-8">
+                                <ProjectMetadataPanel
+                                    project={activeProject!}
+                                    onUpdateProject={async (id, data) => handleUpdateMetadata(data)}
+                                    onInviteTeam={() => setActiveSheet({ type: 'invite' })}
+                                />
                             </div>
-                        </div>
+                        )}
+                        {activeMobileTab === 'docs' && (
+                            <div className="mt-8">
+                                <DocumentsPanel
+                                    project={activeProject!}
+                                    onExport={handleExportPDF}
+                                />
+                            </div>
+                        )}
                     </div>
-                </div>
-            )}
+                )}
+            </main>
+
             {/* Administrative Catalog Manager */}
             <CatalogManager
                 isOpen={isAdminCatalogOpen}
@@ -614,8 +521,6 @@ export default function CineBrainInterface({ initialItems: catalog, initialProje
 }
 
 // --- SUBMODAL COMPONENT ---
-
-import { inviteUserAction, getProjectTeamAction } from "@/app/actions";
 
 function InvitationModal({ projectId, onClose }: { projectId: string, onClose: () => void }) {
     const [email, setEmail] = useState("");
@@ -646,7 +551,7 @@ function InvitationModal({ projectId, onClose }: { projectId: string, onClose: (
             <div className="bg-white rounded-[32px] p-8 w-full max-w-lg shadow-2xl border border-[#E2E8F0]">
                 <div className="flex justify-between items-center mb-8">
                     <div>
-                        <h2 className="text-2xl font-black uppercase tracking-tight text-[#1A1A1A]">Team Collaboration</h2>
+                        <h2 className="text-2xl font-bold uppercase tracking-tight text-[#1A1A1A]">Team Collaboration</h2>
                         <p className="text-[#64748B] text-sm font-medium mt-1">Invite colleagues to edit this project list</p>
                     </div>
                     <button onClick={onClose} className="p-3 bg-[#F8FAFC] rounded-full text-[#64748B] hover:bg-gray-100 transition-colors"><X className="w-5 h-5" /></button>
@@ -667,7 +572,7 @@ function InvitationModal({ projectId, onClose }: { projectId: string, onClose: (
                                 disabled={loading}
                                 className="bg-[#1A1A1A] text-white px-8 rounded-2xl font-bold hover:bg-[#333] transition-all flex items-center gap-2 disabled:opacity-50"
                             >
-                                {loading ? <RefreshCw className="animate-spin w-4 h-4" /> : "INVITE"}
+                                {loading ? <RefreshCcw className="animate-spin w-4 h-4" /> : "INVITE"}
                             </button>
                         </div>
                     </div>
@@ -686,7 +591,7 @@ function InvitationModal({ projectId, onClose }: { projectId: string, onClose: (
                                             <div className="text-[10px] text-[#64748B] font-medium">{m.user?.email}</div>
                                         </div>
                                     </div>
-                                    <div className="text-[9px] font-black uppercase bg-white border border-[#E2E8F0] px-2 py-1 rounded-md text-[#64748B]">
+                                    <div className="text-[9px] font-bold uppercase bg-white border border-[#E2E8F0] px-2 py-1 rounded-md text-[#64748B]">
                                         {m.role}
                                     </div>
                                 </div>
@@ -703,13 +608,13 @@ function InvitationModal({ projectId, onClose }: { projectId: string, onClose: (
                                             <div className="text-[10px] text-gray-400 font-medium">{inv.email}</div>
                                         </div>
                                     </div>
-                                    <div className="text-[8px] font-black uppercase bg-blue-50 text-blue-600 px-2 py-1 rounded-md">
+                                    <div className="text-[8px] font-bold uppercase bg-blue-50 text-blue-600 px-2 py-1 rounded-md">
                                         Invited
                                     </div>
                                 </div>
                             ))}
 
-                            {!team?.members && (
+                            {(!team?.members || team.members.length === 0) && (!team?.invitations || team.invitations.length === 0) && (
                                 <div className="text-center py-8 text-[#94A3B8] italic text-sm">
                                     No collaborators yet. Start by inviting someone!
                                 </div>

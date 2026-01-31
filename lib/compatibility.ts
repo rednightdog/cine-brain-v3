@@ -1,17 +1,20 @@
 import { InventoryEntry, InventoryItem } from "@/components/CineBrainInterface";
+import { validateHardwareCompatibility, validateDependencies } from "./hardware-validator";
 import { findCompatibleAdapters, Adapter } from "./adapters";
 
 export interface CompatibilityWarning {
-    itemId: string;
+    itemId?: string;
     message: string;
-    type: 'MOUNT' | 'SENSOR' | 'WEIGHT';
+    solution?: string; // Actionable advice/solution
+    type: 'MOUNT' | 'SENSOR' | 'WEIGHT' | 'MEDIA' | 'POWER' | 'GENERAL' | 'DEPENDENCY';
+    severity?: 'ERROR' | 'WARNING';
     suggestedAdapters?: Adapter[];
 }
 
 /**
  * Validates a kit for technical conflicts.
  */
-export function validateCompatibility(inventory: InventoryEntry[], catalog: any[]): CompatibilityWarning[] {
+export function validateCompatibility(inventory: InventoryEntry[], catalog: InventoryItem[]): CompatibilityWarning[] {
     const warnings: CompatibilityWarning[] = [];
 
     // Find all cameras
@@ -37,45 +40,58 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: any[
         const hostCam = cameras.find(c => c.assignedCam === entry.assignedCam);
         const hostItem = hostCam ? catalog.find(c => c.id === hostCam.equipmentId) : null;
 
+        // 1. Lens Compatibility (Mount & Sensor)
         if (hostItem && item.category === 'LNS') {
-            // 1. Mount Validation
             const hMount = (hostItem.mount || '').toUpperCase();
             const iMount = (item.mount || '').toUpperCase();
 
             if (hMount && iMount && hMount !== iMount) {
-                // Special case: LPL cameras (Alexa 35) often have PL adapters
-                // But we should STILL warn unless an adapter is explicitly present in the chain (future improvement)
-                // For now, let's treat LPL->PL as a mismatch that requires an adapter suggestion.
-
-                // Previously: const isLPLtoPL = hMount === 'LPL' && iMount === 'PL';
-                // The previous logic skipped warning if isLPLtoPL was true. 
-                // We WANT to warn so the user knows to use an adapter.
-
-                // Find compatible adapters
-                const adapters = findCompatibleAdapters(iMount, hMount);
-
-                let message = `Mount Mismatch: Camera is ${hMount}, Item is ${iMount}`;
-                if (adapters.length > 0) {
-                    const adapterNames = adapters.map(a => a.name).join(' or ');
-                    // Explicitly suggest the adapter
-                    // warning will have suggestedAdapters populated which UI uses to show "Solution: Use ..."
-                } else {
-                    message += `\n(No known adapter found)`;
+                // 1. İmkansız durum kontrolü (Sony E lens on PL camera)
+                if (iMount === 'E-MOUNT' && hMount === 'PL') {
+                    warnings.push({
+                        itemId: entry.id,
+                        message: `🚨 İMKANSIZ: Bu eşleşme fiziksel olarak mümkün değil!`,
+                        solution: "🚫 Vazgeç: Flange mesafesi çok kısa. Fiziksel adaptör imkansız. Lütfen kameranın mount yapısına uygun başka bir lens seçin.",
+                        type: 'MOUNT',
+                        severity: 'ERROR'
+                    });
+                    return;
                 }
 
-                warnings.push({
-                    itemId: entry.id,
-                    message,
-                    type: 'MOUNT',
-                    suggestedAdapters: adapters
-                });
+                // 2. Adaptör kontrolü ve önerisi
+                const adapters = findCompatibleAdapters(iMount, hMount);
+                let solution: string | undefined = undefined;
+
+                if (iMount === 'PL' && hMount === 'E-MOUNT') {
+                    solution = "💡 Çözüm: Envanterden bir 'PL to E-Mount Adapter' (electronic) ekleyin.";
+                } else if (iMount === 'PL' && hMount === 'RF') {
+                    solution = "💡 Çözüm: Envanterden bir 'PL to RF Adapter' (electronic) ekleyin.";
+                } else if (iMount === 'EF' && hMount === 'E-MOUNT') {
+                    solution = "💡 Çözüm: Envanterden bir 'Sigma MC-11 or Metabones' (electronic) ekleyin.";
+                }
+
+                if (adapters.length > 0 || solution) {
+                    warnings.push({
+                        itemId: entry.id,
+                        message: `⚠️ ADAPTÖR LAZIM: ${item.name} bu kameraya doğrudan takılamaz.`,
+                        solution,
+                        type: 'MOUNT',
+                        severity: 'WARNING',
+                        suggestedAdapters: adapters
+                    });
+                } else {
+                    warnings.push({
+                        itemId: entry.id,
+                        message: `Mount Mismatch: Camera is ${hMount}, Item is ${iMount}\n(No known adapter found)`,
+                        type: 'MOUNT',
+                        severity: 'ERROR'
+                    });
+                }
             }
 
-            // 2. Sensor Coverage Validation (using coverage field for lenses)
             const cameraSensor = normalizeSensor(hostItem.sensor_size || hostItem.subcategory);
-            const lensCoverage = normalizeSensor(item.coverage || item.sensor_coverage);
+            const lensCoverage = normalizeSensor(item.coverage);
 
-            // Check if lens coverage is insufficient for camera sensor
             if (cameraSensor && lensCoverage) {
                 const sensorHierarchy = { 'S35': 1, 'FF': 2, 'LF': 3 };
                 const cameraLevel = sensorHierarchy[cameraSensor as keyof typeof sensorHierarchy] || 0;
@@ -90,6 +106,46 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: any[
                 }
             }
         }
+
+        // 2. Hardware Validation (Power, Media, Codecs)
+        if (hostItem && hostItem.id !== item.id) {
+            const hwWarnings = validateHardwareCompatibility(
+                {
+                    brand: hostItem.brand || '',
+                    model: hostItem.model || '',
+                    category: hostItem.category,
+                    specs: hostItem.specs_json ? JSON.parse(hostItem.specs_json) : {}
+                },
+                {
+                    brand: item.brand || '',
+                    model: item.model || '',
+                    category: item.category,
+                    specs: item.specs_json ? JSON.parse(item.specs_json) : {}
+                }
+            );
+
+            hwWarnings.forEach(hw => {
+                warnings.push({
+                    itemId: entry.id,
+                    message: hw.message,
+                    type: hw.type,
+                    severity: hw.severity,
+                    solution: hw.solution
+                });
+            });
+        }
+    });
+
+    // 3. Dependency Validation (Accessory missing cables, etc.)
+    const depWarnings = validateDependencies(inventory, catalog);
+    depWarnings.forEach(w => {
+        warnings.push({
+            itemId: w.itemId,
+            message: w.message,
+            type: w.type,
+            severity: w.severity,
+            solution: w.solution
+        });
     });
 
     return warnings;
