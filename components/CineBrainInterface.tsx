@@ -447,8 +447,8 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                     </div>
                 </div>
 
-                {/* Mobile Tab Bar */}
-                <div className="lg:hidden h-16 border-t border-[#E5E5EA] bg-white flex items-center justify-around shrink-0 z-50">
+                {/* Mobile Tab Bar - Fixed Bottom */}
+                <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 border-t border-[#E5E5EA] bg-white flex items-center justify-around z-50 pb-safe">
                     <button
                         onClick={() => setActiveMobileTab('gear')}
                         className={cn("flex flex-col items-center gap-1", activeMobileTab === 'gear' ? "text-[#007AFF]" : "text-[#8E8E93]")}
