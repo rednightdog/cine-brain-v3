@@ -12,7 +12,7 @@ import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningBadge, WarningTooltip } from './ui/WarningBadge';
 import { getCompatibleAccessories } from '@/lib/camera-accessories';
 import { getProTips } from '@/lib/pro-tips';
-import { Lightbulb } from 'lucide-react';
+import { Lightbulb, ChevronDown } from 'lucide-react';
 
 const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
     CAM: ['Generic', 'Bodies', 'Monitor', 'Media', 'Power', 'Support', 'GoPro', 'Drone', 'Specialty'],
@@ -74,6 +74,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
         category: "CAM",
         subcategory: "Bodies"
     });
+
+    const [isProTipsOpen, setIsProTipsOpen] = useState(false);
 
     // Replication State
     const [replicationData, setReplicationData] = useState<{ items: InventoryItem[], primaryCam: string } | null>(null);
@@ -835,22 +837,45 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 {/* Professional Advice Section (Pro Tips) */}
                 {proTips.length > 0 && (
                     <div className="mx-3 mt-4 space-y-2">
-                        <div className="flex items-center gap-2 px-1">
-                            <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-                            <span className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider">Professional Advice</span>
-                        </div>
-                        <div className="space-y-2">
-                            {proTips.map((tip, idx) => (
-                                <div
-                                    key={idx}
-                                    className="p-3 rounded-xl bg-[#FDFCFB] border border-[#F2EDE4] shadow-sm animate-in fade-in slide-in-from-bottom-2"
-                                >
-                                    <p className="text-[12px] leading-relaxed text-[#5D5D5B] font-medium italic">
-                                        {tip}
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
+                        <button
+                            onClick={() => setIsProTipsOpen(!isProTipsOpen)}
+                            className="flex items-center gap-2 px-1 w-full group cursor-pointer"
+                            title={isProTipsOpen ? "Collapse Advice" : "Expand Professional Advice"}
+                        >
+                            <div className={cn(
+                                "w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-sm",
+                                isProTipsOpen ? "bg-amber-100 text-amber-600" : "bg-white text-amber-500 hover:scale-110"
+                            )}>
+                                <Lightbulb className={cn("w-3.5 h-3.5", !isProTipsOpen && "animate-pulse")} />
+                            </div>
+                            <span className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider group-hover:text-amber-600 transition-colors">
+                                Professional Advice
+                            </span>
+                            <div className="ml-auto">
+                                <ChevronDown className={cn(
+                                    "w-3.5 h-3.5 text-[#C7C7CC] transition-transform duration-300",
+                                    isProTipsOpen && "rotate-180"
+                                )} />
+                            </div>
+                        </button>
+
+                        {isProTipsOpen && (
+                            <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                {proTips.map((tip, idx) => (
+                                    <div
+                                        key={idx}
+                                        className="p-3 rounded-xl bg-[#FDFCFB] border border-[#F2EDE4] shadow-sm"
+                                    >
+                                        <div className="flex gap-3">
+                                            <div className="shrink-0 w-0.5 self-stretch bg-amber-400/30 rounded-full my-1 ml-0.5"></div>
+                                            <p className="text-[12px] leading-relaxed text-[#5D5D5B] font-medium italic">
+                                                {tip}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
