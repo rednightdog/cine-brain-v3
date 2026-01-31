@@ -906,7 +906,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                             value={searchQuery}
                                             onChange={(e) => setSearchQuery(e.target.value)}
                                             placeholder={`Search ${CATEGORIES.find(c => c.id === activeTab)?.name || 'Catalog'}...`}
-                                            className="w-full bg-[#F2F2F7] border-none rounded-xl py-2 pl-9 pr-4 text-xs font-bold focus:ring-1 focus:ring-[#007AFF] placeholder-[#8E8E93]"
+                                            className="w-full bg-[#F2F2F7] border-none rounded-xl py-2 pl-9 pr-4 text-base md:text-xs font-bold focus:ring-1 focus:ring-[#007AFF] placeholder-[#8E8E93]"
                                         />
                                     </div>
                                 </div>
