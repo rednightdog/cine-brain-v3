@@ -380,21 +380,21 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <div className="flex gap-2">
+                    <div className="hidden md:flex gap-2">
                         <Link href="/dashboard" className="text-[10px] font-bold bg-gray-100 hover:bg-gray-200 text-black px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors">
                             <Users size={12} /> COLLABORATION
                         </Link>
                         <button onClick={() => setActiveProjectId(null)} className="text-[10px] font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full transition-colors">EXIT</button>
                     </div>
 
-                    <div className="w-px h-4 bg-white/10 mx-2" />
+                    <div className="hidden md:block w-px h-4 bg-white/10 mx-2" />
 
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setActiveSheet({ type: 'invite' })}
                             className="bg-white text-black px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-tight flex items-center gap-2 hover:bg-gray-200 transition-colors"
                         >
-                            <UserPlus size={12} /> Invite Crew
+                            <UserPlus size={12} /> <span className="hidden sm:inline">Invite Crew</span>
                         </button>
                         <button
                             onClick={() => setIsAdminCatalogOpen(true)}
