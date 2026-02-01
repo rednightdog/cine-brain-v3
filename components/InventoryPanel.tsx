@@ -208,66 +208,60 @@ export function InventoryPanel(props: InventoryPanelProps) {
             // 2. Scan Catalog for Compatible Accessories
             const hostBrand = (hostItem.brand || "").toLowerCase();
             const hostModel = (hostItem.model || "").toLowerCase();
-            const hostName = `${hostItem.brand} ${hostItem.model}`.toLowerCase();
+            const hostDisplayName = (hostItem.name || "").toLowerCase();
             const hostSlug = (hostItem.model || hostItem.name).toLowerCase();
+
+            // Avoid double branding in the hostName if model already contains brand
+            const hostNameMatch = hostModel.includes(hostBrand) ? hostModel : `${hostBrand} ${hostModel}`;
+
+            console.log(`[SmartAdd] Detection: Host=${hostDisplayName}, Brand=${hostBrand}, Model=${hostModel}`);
 
             const suggestions = catalog.filter(c => {
                 if (c.id === hostItem.id) return false;
-                if (!['SUP', 'DIT', 'COM', 'FLT', 'GRP'].includes(c.category)) return false;
+                if (c.category === 'CAM') return false;
 
                 const lowName = (c.name || "").toLowerCase();
+                const lowBrand = (c.brand || "").toLowerCase();
                 const sub = (c.subcategory || "").toLowerCase();
 
-                // 1. Media & Readers (DIT) - Always essential if brand matches or explicitly compatible
-                if (c.category === 'DIT') {
-                    const isMedia = lowName.includes('card') || lowName.includes('drive') || lowName.includes('reader') || sub.includes('media');
-                    if (isMedia) {
-                        if (hostBrand && c.brand?.toLowerCase() === hostBrand) return true;
-                        // Also check if name has camera model
-                        if (lowName.includes(hostModel)) return true;
-                    }
-                    return false;
+                // 1. Explicit Compatibility Tags (Priority 1)
+                if (c.specs_json) {
+                    try {
+                        const specs = typeof c.specs_json === 'string' ? JSON.parse(c.specs_json) : c.specs_json;
+                        const compatibility = specs.compatibility;
+                        if (Array.isArray(compatibility)) {
+                            const hasMatch = compatibility.some((tag: string) => {
+                                const lowTag = tag.toLowerCase();
+                                return hostDisplayName.includes(lowTag) || hostSlug.includes(lowTag) || lowTag === 'universal';
+                            });
+                            if (hasMatch) return true;
+                        }
+                    } catch (e) { }
                 }
 
-                // 2. Power (SUP/GRP) - Only if brand matches or explicitly essential
-                const isPower = lowName.includes('battery') || lowName.includes('power') || lowName.includes('charger') || lowName.includes('v-mount') || lowName.includes('gold mount') || sub.includes('power');
-                if (isPower) {
-                    // Only suggest power if it matches brand or is a standard plate
-                    if (hostBrand && c.brand?.toLowerCase() === hostBrand) return true;
-                    if (lowName.includes('battery plate') || lowName.includes('adapter')) return true;
-                    return false;
+                // 2. Filters (Priority 2)
+                if (c.category === 'FLT' || c.category === 'LIT') {
+                    const isND = (sub === 'filters' || lowName.includes('filter')) && (lowName.includes('nd') || lowName.includes('neutral density'));
+                    const isPola = (sub === 'filters' || lowName.includes('filter')) && (lowName.includes('pola') || lowName.includes('polar'));
+                    return isND || isPola;
                 }
 
-                // 3. Filters (FLT) - Keep it extremely tight
-                if (c.category === 'FLT') {
-                    const isEssentialFilter = lowName.includes('nd') || lowName.includes('pola') || lowName.includes('polariz');
-                    return isEssentialFilter;
-                }
+                // 3. Brand Match + Key Category (Priority 3)
+                const isAccessoryCat = ['SUP', 'COM', 'DIT', 'GRP'].includes(c.category);
+                const isBrandMatch = hostBrand.length > 2 && lowBrand.includes(hostBrand);
 
-                // 4. Critical Support (SUP/GRP) - No generic cables/accessories
-                const essentialSupportKeywords = [
-                    'baseplate', 'bridge plate', 'quick release', 'dovetail', 'vct-14',
-                    'top handle', 'cage', 'matte box', 'follow focus'
+                const essentialKeywords = [
+                    'cage', 'handle', 'plate', 'battery', 'media', 'card', 'reader',
+                    'cable', 'power', 'mount', 'rod', 'follow focus', 'matte box',
+                    'viewfinder', 'monitor', 'bracket', 'rig', 'cfexpress', 'sd card',
+                    'ssd', 'module', 'expander', 'grip', 'remote', 'wireless'
                 ];
-                if (essentialSupportKeywords.some(key => lowName.includes(key))) {
-                    return true;
-                }
+                const hasKeyword = essentialKeywords.some(kw => lowName.includes(kw) || sub.includes(kw));
 
-                // 5. Explicit Compatibility (Final Fallback)
-                try {
-                    const specs = c.specs_json ? JSON.parse(c.specs_json) : {};
-                    if (specs.compatibility && Array.isArray(specs.compatibility)) {
-                        return specs.compatibility.some((tag: string) => {
-                            const lowTag = tag.toLowerCase();
-                            return hostName.includes(lowTag) || hostSlug.includes(lowTag);
-                        });
-                    }
-                } catch (e) { }
+                return isAccessoryCat && (isBrandMatch || hasKeyword) && (isBrandMatch || lowName.includes(hostBrand) || lowName.includes(hostSlug.split(' ')[0]));
+            }).slice(0, 15);
 
-                return false;
-            }).slice(0, 15); // Strict limit to 15 items for better UX
-
-            console.log(`SMART ADD: Found ${suggestions.length} suggestions for ${hostName}`);
+            console.log(`[SmartAdd] Suggestions found: ${suggestions.length}`);
 
             if (suggestions.length > 0) {
                 setSmartSuggestion({

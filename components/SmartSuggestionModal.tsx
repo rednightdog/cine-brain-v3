@@ -113,8 +113,10 @@ export function SmartSuggestionModal({ isOpen, onClose, hostItem, suggestions, o
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-baseline justify-between gap-2">
                                                             <h4 className="text-sm font-bold text-gray-900 truncate">
-                                                                {item.brand !== "Generic" && <span className="font-normal opacity-70">{item.brand} </span>}
-                                                                {item.model}
+                                                                {item.brand && item.brand !== "Generic" && !item.name.toLowerCase().includes(item.brand.toLowerCase()) && (
+                                                                    <span className="font-normal opacity-70">{item.brand} </span>
+                                                                )}
+                                                                {item.model || item.name}
                                                             </h4>
                                                         </div>
                                                         {specs.description && (

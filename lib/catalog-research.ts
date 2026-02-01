@@ -39,6 +39,8 @@ export interface TechnicalSpecs {
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { searchTechnicalSpecs } from './serp-api';
+import dotenv from 'dotenv';
+dotenv.config();
 
 export function normalizeName(name: string): string {
     return name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -193,45 +195,44 @@ function getMockResult(q: string): TechnicalSpecs[] | null {
  * Helper for Web Search (Serper.dev)
  */
 async function searchWeb(query: string): Promise<string> {
-    const apiKey = process.env.SERPER_API_KEY;
-    if (!apiKey) {
-        console.log("No SERPER_API_KEY found. Skipping web search.");
-        return "";
+    const serperKey = process.env.SERPER_API_KEY;
+
+    // 1. Try Serper.dev (First choice)
+    if (serperKey) {
+        try {
+            console.log("Searching web (Serper):", query);
+            const res = await fetch("https://google.serper.dev/search", {
+                method: "POST",
+                headers: { "X-API-KEY": serperKey, "Content-Type": "application/json" },
+                body: JSON.stringify({ q: query + " technical specifications cinema", num: 5 })
+            });
+
+            if (res.ok) {
+                const json = await res.json();
+                return (json.organic || []).map((r: any, idx: number) => `
+                - **Source ${idx + 1}**: ${r.title}
+                  **Snippet**: ${r.snippet}
+                `).join("\n");
+            }
+        } catch (e) { console.error("Serper failed, trying SerpApi..."); }
     }
 
+    // 2. Try SerpApi (Fallback)
     try {
-        console.log("Searching web for:", query);
-        const res = await fetch("https://google.serper.dev/search", {
-            method: "POST",
-            headers: {
-                "X-API-KEY": apiKey,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                q: query + " technical specifications cinema lens camera",
-                num: 5 // Top 5 results
-            })
-        });
-
-        if (!res.ok) {
-            console.error("Search API Error:", res.statusText);
-            return "";
+        console.log("Searching web (SerpApi Fallback):", query);
+        const results = await searchTechnicalSpecs(query);
+        if (results.organic_results) {
+            return results.organic_results.slice(0, 5).map((r: any, idx: number) => `
+            - **Source ${idx + 1}**: ${r.title}
+              **Snippet**: ${r.snippet}
+            `).join("\n");
         }
+        if (results.knowledge_graph) {
+            return `Knowledge Graph: ${JSON.stringify(results.knowledge_graph)}`;
+        }
+    } catch (e) { console.error("SerpApi fallback failed too:", e); }
 
-        const json = await res.json();
-        const organic = json.organic || [];
-
-        // Format results for LLM Context
-        const context = organic.map((r: any, idx: number) => `
-        - **Source ${idx + 1}**: ${r.title} (${r.link})
-          **Snippet**: ${r.snippet}
-        `).join("\n");
-
-        return context;
-    } catch (e) {
-        console.error("Web Search Exception:", e);
-        return "";
-    }
+    return "";
 }
 
 /**
@@ -369,9 +370,12 @@ export async function researchEquipment(query: string, forceLive: boolean = fals
     const weightMatch = webContext.match(/(\d+\.?\d*)\s*kg/i);
     const focalMatch = q.match(/(\d+)mm/i);
 
+    const brand = q.split(' ')[0];
+    const model = q.startsWith(brand) ? q.substring(brand.length).trim() : q;
+
     const fallback: TechnicalSpecs = {
-        brand: q.split(' ')[0],
-        model: q,
+        brand: brand,
+        model: model,
         category: cat,
         subcategory: cat === 'LNS' ? 'Prime' : 'Equipment',
         isAiResearched: true,

@@ -2,81 +2,114 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const isCameraBody = (item: any) => {
-    if (!item || item.category !== "CAM") return false;
-    if (item.subcategory === "Bodies") return true;
-    const name = (item.name || "").toLowerCase();
-    const bodyKeywords = [
-        "sony", "venice", "arri", "alexa", "red", "komodo", "raptor", "camera", "body",
-        "blackmagic", "ursa", "fx3", "fx6", "fx9", "c70", "c300", "c500", "a7s", "a7r", "lumix", "gh5", "s1h"
-    ];
-    return bodyKeywords.some(k => name.includes(k));
-};
+async function simulate() {
+    console.log("🚀 Simulating Smart Suggestion Logic with LIVE DATA...");
 
-async function run() {
     try {
-        const catalog: any[] = await prisma.$queryRaw`SELECT * FROM "EquipmentItem" WHERE status = 'APPROVED'`;
+        // 1. Fetch some approved cameras
+        const cameras = await prisma.equipmentItem.findMany({
+            where: {
+                category: 'CAM',
+                status: 'APPROVED'
+            },
+            take: 5
+        });
 
-        const testCameras = catalog.filter(isCameraBody).slice(0, 5);
-
-        for (const hostItem of testCameras) {
-            console.log(`\nTesting: ${hostItem.brand} ${hostItem.model} (${hostItem.name})`);
-
-            const hostBrand = (hostItem.brand || "").toLowerCase();
-            const hostModel = (hostItem.model || "").toLowerCase();
-            const hostName = `${hostItem.brand} ${hostItem.model}`.toLowerCase();
-            const hostSlug = (hostItem.model || hostItem.name).toLowerCase();
-
-            const suggestions = catalog.filter(c => {
-                if (c.id === hostItem.id) return false;
-                if (!['SUP', 'DIT', 'COM', 'FLT', 'GRP'].includes(c.category)) return false;
-
-                if (c.category === 'FLT') {
-                    const lowName = (c.name || "").toLowerCase();
-                    const isEssential = lowName.includes('nd') || lowName.includes('pola') || lowName.includes('polariz') || lowName.includes('linear');
-                    if (!isEssential) return false;
-                }
-
-                try {
-                    const specs = c.specs_json ? JSON.parse(c.specs_json) : {};
-
-                    if (specs.compatibility && Array.isArray(specs.compatibility)) {
-                        const hasMatch = specs.compatibility.some((tag: string) => {
-                            const lowTag = tag.toLowerCase();
-                            return hostName.includes(lowTag) || hostSlug.includes(lowTag) || lowTag === 'universal' || (hostBrand && lowTag.includes(hostBrand) && lowTag.length > 4);
-                        });
-                        if (hasMatch) return true;
-                    }
-
-                    if (hostBrand && c.brand && c.brand.toLowerCase() === hostBrand) {
-                        const sub = (c.subcategory || "").toLowerCase();
-                        if (sub.includes('media') || sub.includes('batter') || sub.includes('accessory')) return true;
-                    }
-
-                    const lowName = (c.name || "").toLowerCase();
-                    const isSupport = ['SUP', 'GRP'].includes(c.category);
-                    const essentialKeywords = [
-                        'baseplate', 'bridge plate', 'quick release', 'dovetail',
-                        'vct-14', 'top handle', 'cage', 'rod clamp', 'matte box', 'follow focus',
-                        'power cable', 'd-tap', 'battery plate', 'media reader', 'viewfinder cable'
-                    ];
-                    if (isSupport && essentialKeywords.some(key => lowName.includes(key))) return true;
-
-                } catch (e) { return false; }
-                return false;
+        if (cameras.length === 0) {
+            console.log("❌ No approved cameras found in DB!");
+            // Fallback to any cameras if none are approved
+            const anyCameras = await prisma.equipmentItem.findMany({
+                where: { category: 'CAM' },
+                take: 5
             });
-
-            console.log(`- Found ${suggestions.length} suggestions.`);
-            if (suggestions.length > 0) {
-                console.log(`- Sample: ${suggestions[0].name}`);
+            if (anyCameras.length > 0) {
+                console.log("⚠️ Found non-approved cameras, testing with those...");
+                cameras.push(...anyCameras);
+            } else {
+                return;
             }
         }
 
-    } catch (e) {
-        console.error(e);
+        // 2. Fetch all approved items from catalog
+        const catalog = await prisma.equipmentItem.findMany({
+            where: { status: 'APPROVED' }
+        });
+
+        console.log(`📊 Catalog Size: ${catalog.length} items.`);
+
+        for (const hostItem of cameras) {
+            console.log(`\n--- Testing for: ${hostItem.brand} ${hostItem.name} (ID: ${hostItem.id}) ---`);
+
+            const hostLowBrand = (hostItem.brand || "").toLowerCase();
+            const hostLowModel = (hostItem.model || hostItem.name).toLowerCase();
+            const hostFullName = `${hostItem.brand} ${hostItem.model || hostItem.name}`.toLowerCase();
+
+            const suggestions = catalog.filter(item => {
+                // Avoid suggesting the host itself
+                if (item.id === hostItem.id) return false;
+
+                // We only suggest non-camera items (mostly SUP, COM, LNS etc)
+                if (item.category === 'CAM') return false;
+
+                const lowName = item.name.toLowerCase();
+                const lowBrand = (item.brand || "").toLowerCase();
+
+                // --- CATEGORY FILTERING ---
+                // ND/Pola Filter Rule
+                if (item.category === 'LIT') {
+                    const isND = (item.subcategory === 'Filters' || lowName.includes('filter')) && (lowName.includes('nd') || lowName.includes('neutral density'));
+                    const isPola = (item.subcategory === 'Filters' || lowName.includes('filter')) && (lowName.includes('pola') || lowName.includes('polar'));
+                    if (!(isND || isPola)) return false;
+                }
+
+                // --- MATCHING LOGIC ---
+
+                // 1. Explicit Compatibility Tags
+                let hasExplicitTag = false;
+                if (item.specs_json) {
+                    try {
+                        const specs = typeof item.specs_json === 'string' ? JSON.parse(item.specs_json) : item.specs_json;
+                        const compatibility = specs.compatibility;
+                        if (Array.isArray(compatibility)) {
+                            hasExplicitTag = compatibility.some((tag: string) => {
+                                const lowTag = tag.toLowerCase();
+                                return hostFullName.includes(lowTag) || hostLowModel.includes(lowTag) || lowTag === 'universal';
+                            });
+                        } else if (typeof compatibility === 'string') {
+                            const lowTag = compatibility.toLowerCase();
+                            hasExplicitTag = hostFullName.includes(lowTag) || hostLowModel.includes(lowTag) || lowTag === 'universal';
+                        }
+                    } catch (e) {
+                        // ignore parse errors
+                    }
+                }
+
+                // 2. Brand Matching & Essential Keywords
+                const isSameBrandAccessory = (item.category === 'SUP' || item.category === 'COM') &&
+                    lowBrand === hostLowBrand && hostLowBrand.length > 2;
+
+                const essentialKeywords = [
+                    'cage', 'handle', 'plate', 'battery', 'media', 'card', 'reader',
+                    'cable', 'power', 'mount', 'rod', 'follow focus', 'matte box',
+                    'viewfinder', 'monitor', 'bracket', 'rig'
+                ];
+                const isEssential = essentialKeywords.some(rev => lowName.includes(rev));
+
+                return hasExplicitTag || (isSameBrandAccessory && isEssential);
+            });
+
+            console.log(`✨ Found ${suggestions.length} suggestions.`);
+            if (suggestions.length > 0) {
+                suggestions.slice(0, 5).forEach(s => console.log(`   - [${s.category}] ${s.brand} ${s.name}`));
+            } else {
+                console.log("   ❌ No suggestions found for this item.");
+            }
+        }
+    } catch (err) {
+        console.error("Critical error in simulation:", err);
     } finally {
         await prisma.$disconnect();
     }
 }
 
-run();
+simulate();

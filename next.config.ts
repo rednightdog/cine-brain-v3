@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  turbopack: {}, // Silence Next.js 16 warning for custom webpack with Turbopack default
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
