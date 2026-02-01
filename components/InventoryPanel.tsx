@@ -216,43 +216,56 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 if (!['SUP', 'DIT', 'COM', 'FLT', 'GRP'].includes(c.category)) return false;
 
                 const lowName = (c.name || "").toLowerCase();
+                const sub = (c.subcategory || "").toLowerCase();
 
-                // 1. Creative Choice Filter (Same as before)
+                // 1. Media & Readers (DIT) - Always essential if brand matches or explicitly compatible
+                if (c.category === 'DIT') {
+                    const isMedia = lowName.includes('card') || lowName.includes('drive') || lowName.includes('reader') || sub.includes('media');
+                    if (isMedia) {
+                        if (hostBrand && c.brand?.toLowerCase() === hostBrand) return true;
+                        // Also check if name has camera model
+                        if (lowName.includes(hostModel)) return true;
+                    }
+                    return false;
+                }
+
+                // 2. Power (SUP/GRP) - Only if brand matches or explicitly essential
+                const isPower = lowName.includes('battery') || lowName.includes('power') || lowName.includes('charger') || lowName.includes('v-mount') || lowName.includes('gold mount') || sub.includes('power');
+                if (isPower) {
+                    // Only suggest power if it matches brand or is a standard plate
+                    if (hostBrand && c.brand?.toLowerCase() === hostBrand) return true;
+                    if (lowName.includes('battery plate') || lowName.includes('adapter')) return true;
+                    return false;
+                }
+
+                // 3. Filters (FLT) - Keep it extremely tight
                 if (c.category === 'FLT') {
-                    const isEssential = lowName.includes('nd') || lowName.includes('pola') ||
-                        lowName.includes('polariz') || lowName.includes('linear');
-                    if (!isEssential) return false;
+                    const isEssentialFilter = lowName.includes('nd') || lowName.includes('pola') || lowName.includes('polariz');
+                    return isEssentialFilter;
                 }
 
-                // 2. Brand Ecosystem Match (Highly Reliable)
-                // If I add ARRI camera, I want ARRI accessories (readers, batteries, cables)
-                if (hostBrand && c.brand && c.brand.toLowerCase() === hostBrand) {
-                    return true;
-                }
-
-                // 3. Essential Support Gear (Keywords)
-                const essentialKeywords = [
+                // 4. Critical Support (SUP/GRP) - No generic cables/accessories
+                const essentialSupportKeywords = [
                     'baseplate', 'bridge plate', 'quick release', 'dovetail', 'vct-14',
-                    'top handle', 'cage', 'rod clamp', 'matte box', 'follow focus',
-                    'cable', 'd-tap', 'battery plate', 'media reader'
+                    'top handle', 'cage', 'matte box', 'follow focus'
                 ];
-                if (essentialKeywords.some(key => lowName.includes(key))) {
+                if (essentialSupportKeywords.some(key => lowName.includes(key))) {
                     return true;
                 }
 
-                // 4. Compatibility Tags (Specs JSON)
+                // 5. Explicit Compatibility (Final Fallback)
                 try {
                     const specs = c.specs_json ? JSON.parse(c.specs_json) : {};
                     if (specs.compatibility && Array.isArray(specs.compatibility)) {
                         return specs.compatibility.some((tag: string) => {
                             const lowTag = tag.toLowerCase();
-                            return hostName.includes(lowTag) || hostSlug.includes(lowTag) || lowTag === 'universal';
+                            return hostName.includes(lowTag) || hostSlug.includes(lowTag);
                         });
                     }
-                } catch (e) { /* ignore parse errors */ }
+                } catch (e) { }
 
                 return false;
-            }).slice(0, 30); // Limit to top 30 to prevent UI lag
+            }).slice(0, 15); // Strict limit to 15 items for better UX
 
             console.log(`SMART ADD: Found ${suggestions.length} suggestions for ${hostName}`);
 
