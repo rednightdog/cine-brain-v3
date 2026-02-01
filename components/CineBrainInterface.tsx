@@ -46,6 +46,9 @@ export type InventoryItem = {
     lens_type?: string | null;
     sensor_size?: string | null;
     sensor_type?: string | null;
+    resolution?: string | null;
+    dynamic_range?: string | null;
+    native_iso?: string | null;
     focal_length?: string | null;
     aperture?: string | null;
     weight_kg?: number | null;

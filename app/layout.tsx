@@ -13,6 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://cinebrain.app"),
   title: "CineBrain Pro",
   description: "Professional Camera & Equipment Intelligence",
   manifest: "/manifest.json",
@@ -20,6 +21,19 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "CineBrain Pro",
+  },
+  openGraph: {
+    title: "CineBrain Pro",
+    description: "Professional Camera & Equipment Intelligence",
+    url: "https://cinebrain.app",
+    siteName: "CineBrain Pro",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CineBrain Pro",
+    description: "Professional Camera & Equipment Intelligence",
   },
 };
 

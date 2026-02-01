@@ -29,8 +29,11 @@ model EquipmentItem {
   mount          String?
   weight_kg      Float?
   resolution     String?
+  dynamic_range  String?
+  native_iso     String?
   focal_length   String?
   aperture       String?
+  t_stop_range   String?
   power_draw_w   Int?
   sensor_size    String?  // For CAM: S35/FF/LF
   sensor_type    String?
@@ -91,6 +94,7 @@ model User {
   jobTitle      String?
   role          String    @default("USER")
   language      String    @default("TR")
+  isApproved    Boolean   @default(false)
   accounts      Account[]
   sessions      Session[]
   createdAt     DateTime  @default(now())

@@ -3,8 +3,12 @@ import { InventoryItem } from "@/components/CineBrainInterface";
 export const CATEGORIES = [
     { id: "CAM", name: "CAMERA" },
     { id: "LNS", name: "LENS" },
+    { id: "FLT", name: "FILTER" },
     { id: "SUP", name: "SUPPORT" },
+    { id: "GRP", name: "GRIP" },
     { id: "LIT", name: "LIGHT" },
+    { id: "DIT", name: "DIT & MEDIA" },
+    { id: "COM", name: "COMMS" },
 ];
 
 export const isCameraBody = (item: InventoryItem | undefined) => {

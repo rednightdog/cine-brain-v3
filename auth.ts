@@ -48,6 +48,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     ],
     session: { strategy: "jwt" },
     callbacks: {
+        async signIn({ user, account, profile }) {
+            // Allow initial sign in for the admin or if user is already approved
+            const dbUser = await prisma.user.findUnique({
+                where: { email: user.email as string }
+            });
+
+            // If user doesn't exist yet (first time OAuth), they will be created with isApproved: false
+            // We allow them to be created, but they won't be able to "do" anything if we protect routes
+            // OR we can block the sign in here if we want to be strict.
+
+            // For now, let's allow the creation of the user record but we can check isApproved
+            if (dbUser && !dbUser.isApproved) {
+                // You can add logic here to allow specific emails to bypass
+                const adminEmails = ["arasdemiray@gmail.com"]; // Example, update with your email
+                if (adminEmails.includes(user.email as string)) {
+                    return true;
+                }
+                return false; // Deny sign in
+            }
+            return true;
+        },
         async jwt({ token, user }) {
             if (user) {
                 token.id = user.id

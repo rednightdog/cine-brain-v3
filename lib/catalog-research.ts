@@ -5,14 +5,23 @@ export interface TechnicalSpecs {
     subcategory: string;
     coverage?: string; // For lenses: S35, FF, LF
     mount?: string;
-    sensor_size?: 'FF' | 'S35' | 'LF' | 'APS-C';
+    sensor_size?: string;
+    sensor_type?: string;
+    resolution?: string;
+    dynamic_range?: string;
+    native_iso?: string;
     lens_type?: 'Spherical' | 'Anamorphic';
     front_diameter_mm?: number;
     weight_kg?: number;
+    close_focus_m?: number;
+    t_stop_range?: string;
+    image_circle_mm?: number;
     description?: string;
     isAiResearched: boolean;
     source_url?: string;
     accessories?: TechnicalSpecs[];
+    payload_kg?: number;
+    focal_length?: string;
 
     // Hardware Compatibility Specs
     power?: { min_voltage?: number; max_voltage?: number; mount_type?: string };
@@ -29,6 +38,7 @@ export interface TechnicalSpecs {
  */
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { searchTechnicalSpecs } from './serp-api';
 
 export function normalizeName(name: string): string {
     return name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -227,7 +237,7 @@ async function searchWeb(query: string): Promise<string> {
 /**
  * Main AI Research Function
  */
-export async function researchEquipment(query: string): Promise<TechnicalSpecs[] | null> {
+export async function researchEquipment(query: string, forceLive: boolean = false): Promise<TechnicalSpecs[] | null> {
     let q = query.trim();
     const openaiKey = process.env.OPENAI_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
@@ -250,81 +260,71 @@ export async function researchEquipment(query: string): Promise<TechnicalSpecs[]
     };
 
     for (const [typo, fix] of Object.entries(commonTypos)) {
-        if (lowerQ === typo || (lowerQ.includes(typo) && !lowerQ.includes(fix.toLowerCase()))) {
-            console.log(`[DEBUG] Normalizing: "${q}" -> "${fix}"`);
-            q = fix; // Simplify to ONLY the fix if the brand is mentioned alone
+        if (lowerQ === typo) {
+            console.log(`[DEBUG] Normalizing Brand: "${q}" -> "${fix}"`);
+            q = fix;
             break;
         }
+        // ONLY replace if the query is just a typo, do NOT replace if it is a specific product title containing the typo
     }
 
     console.log("[DEBUG] Research Phase Start. Final Query:", q);
 
-    // 0. CHECK LOCAL KNOWLEDGE BASE FIRST (High Priority Sets)
-    const localHit = getMockResult(q.toLowerCase());
-    if (localHit && localHit.length > 0) {
-        const isGeneric = localHit[0].brand === 'Generic';
-        if (!isGeneric) {
-            console.log("Local Knowledge Hit!", localHit[0].model);
-            return localHit;
+    /* 
+    // Commented out to prioritize Serper.dev 1000 Quota
+    // Try SerpApi Knowledge Graph first (Graceful Fallback)
+    let serpContext = "";
+    try {
+        const serpResults = await searchTechnicalSpecs(q);
+        if (serpResults && serpResults.knowledge_graph) {
+            serpContext = `\nSERPAPI KNOWLEDGE GRAPH DATA:\n${JSON.stringify(serpResults.knowledge_graph, null, 2)}`;
+            console.log(`[DEBUG] Found SerpApi Knowledge Graph data for: ${q}`);
+        }
+    } catch (e: any) {
+        console.warn(`[SERPAPI] Quota or error: ${e.message}. Continuing with Serper.dev...`);
+    }
+    */
+    const serpContext = "";
+
+    // 0. CHECK LOCAL KNOWLEDGE BASE FIRST (Only if not forceLive)
+    if (!forceLive) {
+        const localHit = getMockResult(q.toLowerCase());
+        if (localHit && localHit.length > 0) {
+            const isGeneric = localHit[0].brand === 'Generic';
+            if (!isGeneric) {
+                console.log("Local Knowledge Hit!", localHit[0].model);
+                return localHit;
+            }
         }
     }
 
     // 1. PERFORM WEB SEARCH (Deep Search)
-    const webContext = await searchWeb(q);
+    const webContextResults = await searchWeb(q);
+    const webContext = webContextResults + (serpContext ? `\n\n${serpContext}` : "");
     console.log("Web Search Context (Snippet):", webContext.substring(0, 500) + "...");
 
     const SYSTEM_PROMPT = `You are an elite cinema equipment researcher and data curator. 
-    Your mission is to find and structure DEEP TECHNICAL SPECS for: "${q}".
-    
+    Your mission is to find and structure DEEP TECHNICAL SPECS.
+    You MUST prioritize data from official manufacturer datasheets (ARRI.com, Sony.com, CookeOptics.com, etc.).
+
     ### LIVE WEB SEARCH CONTEXT:
     ${webContext ? webContext : "No results found. Rely on your internal elite knowledge."}
 
-    ### INTERNAL REFERENCE (Use these EXACT values for these series):
-    - **Leitz/Leica Summilux-C**: Front: 95mm, Iris: T1.4, Image Circle: 35mm.
-    - **Leitz/Leica Summicron-C**: Front: 95mm, Iris: T2.0, Image Circle: 35mm.
-    - **Tribe7 Blackwing7**: Front: 114mm, Iris: T1.9 (Binary/Transient/Expressive).
-    - **Cooke SP3**: Front: 64mm (screw-in 58mm), Iris: T2.4.
-    
     ### MANDATORY RULES:
-    1. **Brand Expansion**: If the query is just a BRAND name (e.g., "Sony", "ARRI", "Leica"), DO NOT return a single generic result. Instead, return a list of their 3-5 most famous CURRENT professional cinema products (Cameras and Lenses).
-    2. **No Empty Specs**: Never return "-" or empty values for professional equipment. If search results are missing data, use your internal expertise to provide the exact industry-standard technical specs for that specific model.
-    3. **Focal Lengths**: If the search is for a series, return the full list of focal lengths.
-    4. **Categorization**: Lenses MUST be "LNS". Pro cameras MUST be "CAM".
-    5. **Image Circle**: Be precise (S35, FF, LF).
-    6. **Description**: Mention key features and CITE sources.
+    1. **Datasheet Accuracy**: For Cameras, find the exact Sensor Resolution, Dynamic Range (Stops), and Native ISOs. For Lenses, find exact Close Focus (meters), Front Diameter, and T-Stop range.
+    2. **Units**: Weight in KG, Diameters in MM, Focus in Meters.
     
-    Return ONLY a JSON array. If unsure, provide your BEST ACCURATE ESTIMATE.
-    [{
-        "brand": "string",
-        "model": "string",
-        "category": "CAM" | "LNS" | "LGT" | "FLT" | "SUP" | "MON",
-        "subcategory": "string",
-        "coverage": "string (example: 'LF', 'FF', 'S35')",
-        "mount": "string (PL, LPL, E, EF)",
-        "lens_type": "string (Spherical, Anamorphic)",
-        "front_diameter_mm": "number",
-        "weight_kg": "number",
-        "close_focus": "string (e.g., '0.45m')",
-        "iris_range": "string (e.g., 'T1.4-T22')",
-        "image_circle_mm": "number",
-        "power": { "min_voltage": "number", "max_voltage": "number", "mount_type": "string (V-Mount, Gold-Mount, B-Mount)" },
-        "media_slots": ["string array (AXS, SD, CFexpress, CFast)"],
-        "compatible_codecs": ["string array (X-OCN, ProRes, RAW)"],
-        "media_type": "string (for memory cards: AXS, SD, etc.)",
-        "write_speed": "string (e.g., '4.8Gbps')",
-        "certified_for": ["string array (codecs it can record)"],
-        "description": "string",
-        "source_url": "string (the official product page URL or trusted review source)",
-        "accessories": []
-    }]
+    Return ONLY a JSON array of technical specs with Brand, Model, Category, and all found technical fields.
     DO NOT wrap in markdown. No explanation outside JSON.`;
+
+    const FINAL_PROMPT = `${SYSTEM_PROMPT}\n\nUSER QUERY: Research ${q}\n\nReturn the JSON array now:`;
 
     // 2. Try OpenAI
     if (openaiKey && openaiKey.length > 5) {
         try {
             const openai = new OpenAI({ apiKey: openaiKey });
             const completion = await openai.chat.completions.create({
-                messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: q }],
+                messages: [{ role: "system", content: FINAL_PROMPT }],
                 model: "gpt-4o",
             });
             const content = completion.choices[0].message.content;
@@ -342,10 +342,10 @@ export async function researchEquipment(query: string): Promise<TechnicalSpecs[]
     // 3. Try Gemini
     if (geminiKey && geminiKey.length > 5) {
         try {
-            console.log("Calling Google Gemini (Pro 1.5)...");
+            console.log("Calling Google Gemini (Flash 1.5)...");
             const genAI = new GoogleGenerativeAI(geminiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-            const result = await model.generateContent(SYSTEM_PROMPT);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const result = await model.generateContent(FINAL_PROMPT);
             const text = result.response.text();
 
             console.log("Gemini Raw Response Snippet:", text.substring(0, 300));
@@ -358,5 +358,30 @@ export async function researchEquipment(query: string): Promise<TechnicalSpecs[]
         }
     }
 
-    return getMockResult(q.toLowerCase());
+    // 4. Smart Regex Fallback (Bulletproof)
+    console.log("Using Smart Regex Fallback for:", q);
+    const cat = q.match(/(\d+mm)|(lens)|(prime)|(zoom)|(anamorphic)|(t\d\.\d)/i) ? 'LNS' : (q.match(/(camera)|(alexa)|(venice)|(red)|(sony)/i) ? 'CAM' : 'SUP');
+
+    // Simple extraction from webContext
+    const drMatch = webContext.match(/(\d+\.?\d*)\s*(stops|stop)\s*(of)?\s*dynamic range/i);
+    const isoMatch = webContext.match(/native\s*iso\s*(\d+(\/\d+)?)/i);
+    const tStopMatch = webContext.match(/t(\d\.\d)/i);
+    const weightMatch = webContext.match(/(\d+\.?\d*)\s*kg/i);
+    const focalMatch = q.match(/(\d+)mm/i);
+
+    const fallback: TechnicalSpecs = {
+        brand: q.split(' ')[0],
+        model: q,
+        category: cat,
+        subcategory: cat === 'LNS' ? 'Prime' : 'Equipment',
+        isAiResearched: true,
+        dynamic_range: drMatch ? drMatch[1] + " Stops" : undefined,
+        native_iso: isoMatch ? isoMatch[1] : undefined,
+        t_stop_range: tStopMatch ? "T" + tStopMatch[1] : (cat === 'LNS' && q.match(/t(\d\.\d)/i) ? "T" + q.match(/t(\d\.\d)/i)![1] : undefined),
+        weight_kg: weightMatch ? parseFloat(weightMatch[1]) : undefined,
+        focal_length: focalMatch ? focalMatch[1] + "mm" : undefined,
+        description: `Enriched via Smart Research Fallback. Context: ${webContext.substring(0, 100)}`,
+    };
+
+    return [fallback];
 }

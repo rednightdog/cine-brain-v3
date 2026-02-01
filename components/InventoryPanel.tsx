@@ -13,6 +13,7 @@ import { WarningBadge, WarningTooltip } from './ui/WarningBadge';
 import { getCompatibleAccessories } from '@/lib/camera-accessories';
 import { getProTips } from '@/lib/pro-tips';
 import { Lightbulb, ChevronDown } from 'lucide-react';
+import { SmartSuggestionModal } from './SmartSuggestionModal';
 
 const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
     CAM: ['Generic', 'Bodies', 'Monitor', 'Media', 'Power', 'Support', 'GoPro', 'Drone', 'Specialty'],
@@ -80,6 +81,14 @@ export function InventoryPanel(props: InventoryPanelProps) {
     // Replication State
     const [replicationData, setReplicationData] = useState<{ items: InventoryItem[], primaryCam: string } | null>(null);
     const [replicationTargets, setReplicationTargets] = useState<Set<string>>(new Set());
+
+    // Smart Suggestion State
+    const [smartSuggestion, setSmartSuggestion] = useState<{ isOpen: boolean; host: InventoryItem | null; suggestions: InventoryItem[]; pendingItems: InventoryItem[] }>({
+        isOpen: false,
+        host: null,
+        suggestions: [],
+        pendingItems: []
+    });
 
     // Reset filters when changing category
     React.useEffect(() => {
@@ -187,21 +196,122 @@ export function InventoryPanel(props: InventoryPanelProps) {
         handleSmartAdd([item]);
     };
 
+
+    /**
+     * CORE ADD LOGIC - Intercepts for Smart Suggestions
+     */
     const handleSmartAdd = (items: InventoryItem[]) => {
+        // 1. Check if we have a Host Item (Camera Body)
+        const hostItem = items.find(i => isCameraBody(i));
+
+        if (hostItem) {
+            // 2. Scan Catalog for Compatible Accessories
+            const hostBrand = (hostItem.brand || "").toLowerCase();
+            const hostModel = (hostItem.model || "").toLowerCase();
+            const hostName = `${hostItem.brand} ${hostItem.model}`.toLowerCase();
+            const hostSlug = (hostItem.model || hostItem.name).toLowerCase();
+
+            const suggestions = catalog.filter(c => {
+                // Skip if it is the host item itself
+                if (c.id === hostItem.id) return false;
+
+                // Only suggest relevant categories as accessories
+                if (!['SUP', 'DIT', 'COM', 'FLT', 'GRP'].includes(c.category)) return false;
+
+                // SPECIAL RULE: Filters (FLT) should only suggest ND and Polarisers 
+                // because others (Promist, Glimmer, etc.) are creative choices.
+                if (c.category === 'FLT') {
+                    const lowName = (c.name || "").toLowerCase();
+                    const isEssential = lowName.includes('nd') ||
+                        lowName.includes('pola') ||
+                        lowName.includes('polariz') ||
+                        lowName.includes('linear');
+                    if (!isEssential) return false;
+                }
+
+                try {
+                    const specs = c.specs_json ? JSON.parse(c.specs_json) : {};
+
+                    // A. Explicit Compatibility Tags
+                    if (specs.compatibility && Array.isArray(specs.compatibility)) {
+                        const hasMatch = specs.compatibility.some((tag: string) => {
+                            const lowTag = tag.toLowerCase();
+                            return hostName.includes(lowTag) ||
+                                hostSlug.includes(lowTag) ||
+                                lowTag === 'universal' ||
+                                (hostBrand && lowTag.includes(hostBrand) && lowTag.length > 4); // avoid too short tags
+                        });
+                        if (hasMatch) return true;
+                    }
+
+                    // B. Brand + Subcategory Matching (e.g. Sony Media for Sony Camera)
+                    if (hostBrand && c.brand && c.brand.toLowerCase() === hostBrand) {
+                        const sub = (c.subcategory || "").toLowerCase();
+                        if (sub.includes('media') || sub.includes('batter') || sub.includes('accessory')) {
+                            return true;
+                        }
+                    }
+
+                    // C. Name matching fallback for Rialto/Extension systems
+                    if (hostName.includes('venice') && c.name.toLowerCase().includes('rialto')) return true;
+
+                    // D. Universal Support Essentials (Suggested even if brand doesn't match)
+                    const lowName = (c.name || "").toLowerCase();
+                    const isSupport = ['SUP', 'GRP'].includes(c.category);
+                    const essentialKeywords = [
+                        'baseplate', 'bridge plate', 'quick release', 'dovetail',
+                        'vct-14', 'top handle', 'cage', 'rod clamp', 'matte box', 'follow focus'
+                    ];
+
+                    if (isSupport && essentialKeywords.some(key => lowName.includes(key))) {
+                        return true;
+                    }
+
+                } catch (e) { return false; }
+                return false;
+            });
+
+            if (suggestions.length > 0) {
+                // 3. Trigger Smart Suggestion Modal
+                setSmartSuggestion({
+                    isOpen: true,
+                    host: hostItem,
+                    suggestions: suggestions,
+                    pendingItems: items
+                });
+                return; // Stop here, wait for user
+            }
+        }
+
+        // If no smart suggestions, proceed to normal flow
+        processAdd(items);
+    };
+
+    // Finalize Add (Called directly or after Modal)
+    const processAdd = (itemsToAdd: InventoryItem[]) => {
         const primaryCam = cameraFilter !== 'ALL' ? cameraFilter : undefined;
         const otherCams = activeCameras.filter(c => c !== (primaryCam || 'A'));
 
         // Bodies are never replicated. Single items or sets go through replication if other cams exist.
-        const isBody = items.length === 1 && isCameraBody(items[0]);
+        const isBody = itemsToAdd.length === 1 && isCameraBody(itemsToAdd[0]);
         if (isBody || otherCams.length === 0) {
-            items.forEach(i => onAddItem(i, primaryCam));
+            itemsToAdd.forEach(i => onAddItem(i, primaryCam));
             setIsCatalogOpen(false);
             return;
         }
 
         // Show Replication Modal - Default to first target cam if multiple exist
-        setReplicationData({ items, primaryCam: primaryCam || 'A' });
+        setReplicationData({ items: itemsToAdd, primaryCam: primaryCam || 'A' });
         setReplicationTargets(new Set()); // Start empty
+    };
+
+    const confirmSmartSuggestion = (selectedAccessories: InventoryItem[]) => {
+        const { pendingItems } = smartSuggestion;
+        // Combine original items + selected accessories
+        const finalBatch = [...pendingItems, ...selectedAccessories];
+
+        setSmartSuggestion(prev => ({ ...prev, isOpen: false }));
+        processAdd(finalBatch);
     };
 
     const confirmReplication = (shouldReplicate: boolean) => {
@@ -567,46 +677,58 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                     })()}
                                                 </div>
                                                 {/* Lens Specs: Diameter, Weight & Smart Info */}
-                                                {item.category === 'LNS' && (
-                                                    <div className="flex flex-col mt-0.5">
-                                                        <div className="flex items-center gap-2 text-[9px] text-[#8E8E93] font-medium">
-                                                            {item.front_diameter_mm && (
-                                                                <span>⌀ {item.front_diameter_mm}mm</span>
-                                                            )}
-                                                            {item.weight_kg && (
-                                                                <span>• {item.weight_kg}kg</span>
-                                                            )}
-                                                        </div>
-                                                        {/* Smart Crop Factor Info */}
-                                                        {(() => {
-                                                            const camEntry = inventory.find(i => i.assignedCam === entry.assignedCam && catalog.find(c => c.id === i.equipmentId)?.category === 'CAM');
-                                                            const camItem = camEntry ? catalog.find(c => c.id === camEntry.equipmentId) : null;
+                                                {(() => {
+                                                    const specs = item.specs_json ? JSON.parse(item.specs_json) : {};
+                                                    return (
+                                                        <div className="flex flex-col mt-0.5">
+                                                            <div className="flex items-center gap-2 text-[9px] text-[#8E8E93] font-medium">
+                                                                {item.category === 'LNS' && (
+                                                                    <>
+                                                                        {(specs.t_stop_range || item.aperture) && (
+                                                                            <span className="text-[#1A1A1A] font-bold">{specs.t_stop_range || item.aperture}</span>
+                                                                        )}
+                                                                        {item.front_diameter_mm && <span>⌀ {item.front_diameter_mm}mm</span>}
+                                                                        {specs.close_focus_m && <span>• CF {specs.close_focus_m}m</span>}
+                                                                        {item.weight_kg && <span>• {item.weight_kg}kg</span>}
+                                                                    </>
+                                                                )}
+                                                                {item.category === 'CAM' && (
+                                                                    <>
+                                                                        {(specs.dynamic_range || item.dynamic_range) && (
+                                                                            <span className="text-orange-600 font-bold">{specs.dynamic_range || item.dynamic_range}</span>
+                                                                        )}
+                                                                        {(specs.native_iso || item.native_iso) && (
+                                                                            <span className="text-[#1A1A1A] font-bold">ISO {specs.native_iso || item.native_iso}</span>
+                                                                        )}
+                                                                        {(item as any).resolution && <span>• {(item as any).resolution}</span>}
+                                                                        {item.weight_kg && <span>• {item.weight_kg}kg</span>}
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                            {/* Smart Crop Factor Info */}
+                                                            {item.category === 'LNS' && (() => {
+                                                                const camEntry = inventory.find(i => i.assignedCam === entry.assignedCam && catalog.find(c => c.id === i.equipmentId)?.category === 'CAM');
+                                                                const camItem = camEntry ? catalog.find(c => c.id === camEntry.equipmentId) : null;
 
-                                                            if (camItem && item.focal_length) {
-                                                                const cf = getCropFactor(camItem.sensor_type || camItem.subcategory || '');
-                                                                if (cf > 1.1) {
-                                                                    const mmStr = item.focal_length.replace(/\D/g, '');
-                                                                    const mm = parseInt(mmStr);
-                                                                    if (!isNaN(mm)) {
-                                                                        return (
-                                                                            <div className="text-[9px] text-[#007AFF] font-bold bg-blue-50/80 border border-blue-100 px-1.5 py-0.5 rounded mt-1 w-fit select-none" title={`Sensor: ${camItem.sensor_type} (${cf}x)`}>
-                                                                                ⚡ {(mm * cf).toFixed(0)}mm Equiv. <span className="opacity-70 font-normal">({cf}x Crop)</span>
-                                                                            </div>
-                                                                        );
+                                                                if (camItem && item.focal_length) {
+                                                                    const cf = getCropFactor(camItem.sensor_type || camItem.subcategory || '');
+                                                                    if (cf > 1.1) {
+                                                                        const mmStr = item.focal_length.replace(/\D/g, '');
+                                                                        const mm = parseInt(mmStr);
+                                                                        if (!isNaN(mm)) {
+                                                                            return (
+                                                                                <div className="text-[9px] text-[#007AFF] font-bold bg-blue-50/80 border border-blue-100 px-1.5 py-0.5 rounded mt-1 w-fit select-none" title={`Sensor: ${camItem.sensor_type} (${cf}x)`}>
+                                                                                    ⚡ {(mm * cf).toFixed(0)}mm Equiv. <span className="opacity-70 font-normal">({cf}x Crop)</span>
+                                                                                </div>
+                                                                            );
+                                                                        }
                                                                     }
                                                                 }
-                                                            }
-                                                            return null;
-                                                        })()}
-                                                    </div>
-                                                )}
-
-                                                {/* Camera Weight */}
-                                                {item.category === 'CAM' && item.weight_kg && (
-                                                    <div className="flex items-center gap-2 text-[9px] text-[#8E8E93] font-medium mt-0.5">
-                                                        <span>{item.weight_kg}kg</span>
-                                                    </div>
-                                                )}
+                                                                return null;
+                                                            })()}
+                                                        </div>
+                                                    );
+                                                })()}
 
                                                 <div className="flex flex-col w-full mt-0.5">
                                                     <div className="flex items-center gap-2">
@@ -1543,6 +1665,14 @@ export function InventoryPanel(props: InventoryPanelProps) {
                     </div>
                 )
             }
+
+            <SmartSuggestionModal
+                isOpen={smartSuggestion.isOpen}
+                onClose={() => setSmartSuggestion(prev => ({ ...prev, isOpen: false }))}
+                hostItem={smartSuggestion.host}
+                suggestions={smartSuggestion.suggestions}
+                onConfirm={confirmSmartSuggestion}
+            />
         </div >
     );
 }
