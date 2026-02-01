@@ -260,7 +260,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
                     const isSupport = ['SUP', 'GRP'].includes(c.category);
                     const essentialKeywords = [
                         'baseplate', 'bridge plate', 'quick release', 'dovetail',
-                        'vct-14', 'top handle', 'cage', 'rod clamp', 'matte box', 'follow focus'
+                        'vct-14', 'top handle', 'cage', 'rod clamp', 'matte box', 'follow focus',
+                        'power cable', 'd-tap', 'battery plate', 'media reader', 'viewfinder cable'
                     ];
 
                     if (isSupport && essentialKeywords.some(key => lowName.includes(key))) {

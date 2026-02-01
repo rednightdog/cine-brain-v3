@@ -16,7 +16,10 @@ export const isCameraBody = (item: InventoryItem | undefined) => {
     if (item.subcategory === "Bodies") return true;
     if (item.id && item.id.toLowerCase().includes("body")) return true;
     const name = item.name.toLowerCase();
-    const bodyKeywords = ["sony", "venice", "arri", "alexa", "red", "komodo", "raptor", "camera", "body", "blackmagic", "ursa", "fx3", "fx6", "fx9"];
+    const bodyKeywords = [
+        "sony", "venice", "arri", "alexa", "red", "komodo", "raptor", "camera", "body",
+        "blackmagic", "ursa", "fx3", "fx6", "fx9", "c70", "c300", "c500", "a7s", "a7r", "lumix", "gh5", "s1h"
+    ];
     return bodyKeywords.some(k => name.includes(k));
 };
 
