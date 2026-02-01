@@ -212,82 +212,59 @@ export function InventoryPanel(props: InventoryPanelProps) {
             const hostSlug = (hostItem.model || hostItem.name).toLowerCase();
 
             const suggestions = catalog.filter(c => {
-                // Skip if it is the host item itself
                 if (c.id === hostItem.id) return false;
-
-                // Only suggest relevant categories as accessories
                 if (!['SUP', 'DIT', 'COM', 'FLT', 'GRP'].includes(c.category)) return false;
 
-                // SPECIAL RULE: Filters (FLT) should only suggest ND and Polarisers 
-                // because others (Promist, Glimmer, etc.) are creative choices.
+                const lowName = (c.name || "").toLowerCase();
+
+                // 1. Creative Choice Filter (Same as before)
                 if (c.category === 'FLT') {
-                    const lowName = (c.name || "").toLowerCase();
-                    const isEssential = lowName.includes('nd') ||
-                        lowName.includes('pola') ||
-                        lowName.includes('polariz') ||
-                        lowName.includes('linear');
+                    const isEssential = lowName.includes('nd') || lowName.includes('pola') ||
+                        lowName.includes('polariz') || lowName.includes('linear');
                     if (!isEssential) return false;
                 }
 
+                // 2. Brand Ecosystem Match (Highly Reliable)
+                // If I add ARRI camera, I want ARRI accessories (readers, batteries, cables)
+                if (hostBrand && c.brand && c.brand.toLowerCase() === hostBrand) {
+                    return true;
+                }
+
+                // 3. Essential Support Gear (Keywords)
+                const essentialKeywords = [
+                    'baseplate', 'bridge plate', 'quick release', 'dovetail', 'vct-14',
+                    'top handle', 'cage', 'rod clamp', 'matte box', 'follow focus',
+                    'cable', 'd-tap', 'battery plate', 'media reader'
+                ];
+                if (essentialKeywords.some(key => lowName.includes(key))) {
+                    return true;
+                }
+
+                // 4. Compatibility Tags (Specs JSON)
                 try {
                     const specs = c.specs_json ? JSON.parse(c.specs_json) : {};
-
-                    // A. Explicit Compatibility Tags
                     if (specs.compatibility && Array.isArray(specs.compatibility)) {
-                        const hasMatch = specs.compatibility.some((tag: string) => {
+                        return specs.compatibility.some((tag: string) => {
                             const lowTag = tag.toLowerCase();
-                            return hostName.includes(lowTag) ||
-                                hostSlug.includes(lowTag) ||
-                                lowTag === 'universal' ||
-                                (hostBrand && lowTag.includes(hostBrand) && lowTag.length > 4); // avoid too short tags
+                            return hostName.includes(lowTag) || hostSlug.includes(lowTag) || lowTag === 'universal';
                         });
-                        if (hasMatch) return true;
                     }
+                } catch (e) { /* ignore parse errors */ }
 
-                    // B. Brand + Subcategory Matching (e.g. Sony Media for Sony Camera)
-                    if (hostBrand && c.brand && c.brand.toLowerCase() === hostBrand) {
-                        const sub = (c.subcategory || "").toLowerCase();
-                        if (sub.includes('media') || sub.includes('batter') || sub.includes('accessory')) {
-                            return true;
-                        }
-                    }
-
-                    // C. Name matching fallback for Rialto/Extension systems
-                    if (hostName.includes('venice') && c.name.toLowerCase().includes('rialto')) return true;
-
-                    // D. Universal Support Essentials (Suggested even if brand doesn't match)
-                    const lowName = (c.name || "").toLowerCase();
-                    const isSupport = ['SUP', 'GRP'].includes(c.category);
-                    const essentialKeywords = [
-                        'baseplate', 'bridge plate', 'quick release', 'dovetail',
-                        'vct-14', 'top handle', 'cage', 'rod clamp', 'matte box', 'follow focus',
-                        'power cable', 'd-tap', 'battery plate', 'media reader', 'viewfinder cable'
-                    ];
-
-                    if (isSupport && essentialKeywords.some(key => lowName.includes(key))) {
-                        return true;
-                    }
-
-                } catch (e) { return false; }
                 return false;
-            });
+            }).slice(0, 30); // Limit to top 30 to prevent UI lag
 
-            console.log("SMART ADD: Suggestions Count:", suggestions.length);
+            console.log(`SMART ADD: Found ${suggestions.length} suggestions for ${hostName}`);
 
             if (suggestions.length > 0) {
-                // 3. Trigger Smart Suggestion Modal
                 setSmartSuggestion({
                     isOpen: true,
                     host: hostItem,
                     suggestions: suggestions,
                     pendingItems: items
                 });
-                return; // Stop here, wait for user
-            } else {
-                console.log("SMART ADD: No suggestions found for host:", hostName);
+                return;
             }
-        } else {
-            console.log("SMART ADD: No host camera detected in items:", items);
         }
 
         // If no smart suggestions, proceed to normal flow
