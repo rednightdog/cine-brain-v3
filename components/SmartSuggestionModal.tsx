@@ -68,61 +68,75 @@ export function SmartSuggestionModal({ isOpen, onClose, hostItem, suggestions, o
                         Recommended Accessories ({suggestions.length})
                     </div>
 
-                    <div className="space-y-2">
-                        {suggestions.map(item => {
-                            const isSelected = selectedIds.has(item.id);
-                            const specs = item.specs_json ? JSON.parse(item.specs_json) : {};
+                    <div className="space-y-6">
+                        {['DIT', 'SUP', 'GRP', 'FLT', 'COM'].map(catId => {
+                            const catSuggestions = suggestions.filter(s => s.category === catId);
+                            if (catSuggestions.length === 0) return null;
+
+                            const catName = catId === 'DIT' ? 'Media & Data' :
+                                catId === 'SUP' ? 'Support' :
+                                    catId === 'GRP' ? 'Power & Grip' :
+                                        catId === 'FLT' ? 'Essential Filters' : 'Communication';
 
                             return (
-                                <div
-                                    key={item.id}
-                                    onClick={() => toggleSelection(item.id)}
-                                    className={cn(
-                                        "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
-                                        isSelected
-                                            ? "bg-blue-50 border-blue-200 shadow-sm"
-                                            : "bg-white border-gray-200 hover:border-blue-200 hover:bg-gray-50"
-                                    )}
-                                >
-                                    {/* Checkbox */}
-                                    <div className={cn(
-                                        "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-none",
-                                        isSelected
-                                            ? "bg-blue-600 border-blue-600"
-                                            : "bg-white border-gray-300"
-                                    )}>
-                                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
-                                    </div>
+                                <div key={catId} className="space-y-2">
+                                    <h5 className="text-[10px] font-bold text-blue-600 bg-blue-50/50 px-2 py-0.5 rounded-sm inline-block uppercase tracking-wider mb-1">
+                                        {catName}
+                                    </h5>
+                                    <div className="space-y-2">
+                                        {catSuggestions.map(item => {
+                                            const isSelected = selectedIds.has(item.id);
+                                            const specs = item.specs_json ? JSON.parse(item.specs_json) : {};
 
-                                    {/* Info */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-baseline justify-between">
-                                            <h4 className="text-sm font-bold text-gray-900 truncate">
-                                                {item.brand !== "Generic" && <span className="font-normal opacity-70">{item.brand} </span>}
-                                                {item.model}
-                                            </h4>
-                                            {item.category && (
-                                                <span className="text-[9px] font-bold text-gray-400 uppercase border border-gray-100 px-1 py-0.5 rounded bg-gray-50">
-                                                    {item.category}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {specs.description && (
-                                            <p className="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
-                                                {specs.description}
-                                            </p>
-                                        )}
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    onClick={() => toggleSelection(item.id)}
+                                                    className={cn(
+                                                        "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                                                        isSelected
+                                                            ? "bg-blue-50 border-blue-200 shadow-sm"
+                                                            : "bg-white border-gray-200 hover:border-blue-200 hover:bg-gray-50"
+                                                    )}
+                                                >
+                                                    {/* Checkbox */}
+                                                    <div className={cn(
+                                                        "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-none",
+                                                        isSelected
+                                                            ? "bg-blue-600 border-blue-600"
+                                                            : "bg-white border-gray-300"
+                                                    )}>
+                                                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                                                    </div>
 
-                                        {/* Compatibility Tag */}
-                                        {specs.compatibility && Array.isArray(specs.compatibility) && (
-                                            <div className="flex gap-1mt-1">
-                                                {specs.compatibility.map((c: string, i: number) => (
-                                                    <span key={i} className="text-[9px] text-blue-600 bg-blue-50 px-1 rounded">
-                                                        Fits {c}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
+                                                    {/* Info */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-baseline justify-between gap-2">
+                                                            <h4 className="text-sm font-bold text-gray-900 truncate">
+                                                                {item.brand !== "Generic" && <span className="font-normal opacity-70">{item.brand} </span>}
+                                                                {item.model}
+                                                            </h4>
+                                                        </div>
+                                                        {specs.description && (
+                                                            <p className="text-[10px] text-gray-500 line-clamp-1 mt-0.5">
+                                                                {specs.description}
+                                                            </p>
+                                                        )}
+
+                                                        {/* Compatibility Tag */}
+                                                        {specs.compatibility && Array.isArray(specs.compatibility) && (
+                                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                                {specs.compatibility.map((c: string, i: number) => (
+                                                                    <span key={i} className="text-[9px] text-blue-600 bg-blue-50 px-1 rounded">
+                                                                        Fits {c}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
