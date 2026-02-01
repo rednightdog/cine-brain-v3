@@ -272,6 +272,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 return false;
             });
 
+            console.log("SMART ADD: Suggestions Count:", suggestions.length);
+
             if (suggestions.length > 0) {
                 // 3. Trigger Smart Suggestion Modal
                 setSmartSuggestion({
@@ -281,7 +283,11 @@ export function InventoryPanel(props: InventoryPanelProps) {
                     pendingItems: items
                 });
                 return; // Stop here, wait for user
+            } else {
+                console.log("SMART ADD: No suggestions found for host:", hostName);
             }
+        } else {
+            console.log("SMART ADD: No host camera detected in items:", items);
         }
 
         // If no smart suggestions, proceed to normal flow
