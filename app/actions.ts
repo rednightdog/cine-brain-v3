@@ -477,16 +477,33 @@ export async function inviteUserAction(projectId: string, email: string) {
         const session = await auth();
         if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
 
+        const normalizedEmail = email.trim().toLowerCase();
+        if (!normalizedEmail || !normalizedEmail.includes("@")) {
+            return { success: false, error: "Invalid email" };
+        }
+
+        if (session.user.email?.toLowerCase() === normalizedEmail) {
+            return { success: false, error: "You are already in this team" };
+        }
+
         const project = await prisma.kit.findUnique({
             where: { id: projectId },
-            include: { team: true }
+            select: {
+                id: true,
+                name: true,
+                ownerId: true,
+                teamId: true,
+            }
         });
 
         if (!project) return { success: false, error: "Project not found" };
 
-        // 1. Ensure project has a team
+        // 1. Ensure project has a team, with explicit permission checks.
         let teamId = project.teamId;
         if (!teamId) {
+            if (project.ownerId !== session.user.id) {
+                return { success: false, error: "Insufficient permissions" };
+            }
             const newTeam = await prisma.team.create({
                 data: {
                     name: `Team for ${project.name}`,
@@ -497,18 +514,51 @@ export async function inviteUserAction(projectId: string, email: string) {
                 }
             });
             teamId = newTeam.id;
+        } else {
+            const requester = await prisma.teamMember.findUnique({
+                where: { teamId_userId: { teamId, userId: session.user.id } }
+            });
+            if (!requester || (requester.role !== "OWNER" && requester.role !== "ADMIN")) {
+                return { success: false, error: "Insufficient permissions" };
+            }
+        }
+
+        const existingUser = await prisma.user.findUnique({
+            where: { email: normalizedEmail }
+        });
+        if (existingUser) {
+            const existingMembership = await prisma.teamMember.findUnique({
+                where: { teamId_userId: { teamId: teamId!, userId: existingUser.id } }
+            });
+            if (existingMembership) {
+                return { success: false, error: "User is already a member of this team" };
+            }
+        }
+
+        const existingInvitation = await prisma.invitation.findFirst({
+            where: {
+                teamId: teamId!,
+                email: normalizedEmail,
+                accepted: false,
+                expires: { gt: new Date() }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+        if (existingInvitation) {
+            return { success: true, invitation: existingInvitation, reused: true };
         }
 
         // 2. Create invitation
         const invitation = await prisma.invitation.create({
             data: {
-                email,
+                email: normalizedEmail,
                 teamId: teamId!,
                 expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
             }
         });
 
-        return { success: true, invitation };
+        revalidatePath("/");
+        return { success: true, invitation, reused: false };
     } catch (e: unknown) {
         return { success: false, error: getErrorMessage(e, "Failed to invite user") };
     }

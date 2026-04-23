@@ -4,6 +4,12 @@ const { authMock, revalidatePathMock, prismaMock } = vi.hoisted(() => {
     const auth = vi.fn();
     const revalidatePath = vi.fn();
     const prisma = {
+        kit: {
+            findUnique: vi.fn(),
+        },
+        team: {
+            create: vi.fn(),
+        },
         teamMember: {
             findUnique: vi.fn(),
         },
@@ -40,7 +46,7 @@ vi.mock("@/lib/catalog-research", () => ({
     researchEquipment: vi.fn(),
 }));
 
-import { inviteUserToTeamAction } from "../app/actions";
+import { inviteUserAction, inviteUserToTeamAction } from "../app/actions";
 
 type SessionLike = {
     user?: {
@@ -49,25 +55,35 @@ type SessionLike = {
     };
 } | null;
 
+function setActionDefaults() {
+    authMock.mockResolvedValue({
+        user: {
+            id: "owner-1",
+            email: "owner@cinebrain.app",
+        },
+    } satisfies SessionLike);
+
+    prismaMock.teamMember.findUnique.mockResolvedValue({ role: "OWNER" });
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    prismaMock.invitation.findFirst.mockResolvedValue(null);
+    prismaMock.invitation.create.mockResolvedValue({
+        id: "inv-1",
+        email: "new.user@cinebrain.app",
+        teamId: "team-1",
+    });
+    prismaMock.kit.findUnique.mockResolvedValue({
+        id: "project-1",
+        name: "Project One",
+        ownerId: "owner-1",
+        teamId: "team-1",
+    });
+    prismaMock.team.create.mockResolvedValue({ id: "team-1" });
+}
+
 describe("inviteUserToTeamAction", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-
-        authMock.mockResolvedValue({
-            user: {
-                id: "owner-1",
-                email: "owner@cinebrain.app",
-            },
-        } satisfies SessionLike);
-
-        prismaMock.teamMember.findUnique.mockResolvedValue({ role: "OWNER" });
-        prismaMock.user.findUnique.mockResolvedValue(null);
-        prismaMock.invitation.findFirst.mockResolvedValue(null);
-        prismaMock.invitation.create.mockResolvedValue({
-            id: "inv-1",
-            email: "new.user@cinebrain.app",
-            teamId: "team-1",
-        });
+        setActionDefaults();
     });
 
     it("returns unauthorized when there is no authenticated user", async () => {
@@ -140,5 +156,63 @@ describe("inviteUserToTeamAction", () => {
         });
         expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard");
         expect(result).toMatchObject({ success: true, reused: false });
+    });
+});
+
+describe("inviteUserAction", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        setActionDefaults();
+    });
+
+    it("blocks project invite when requester is not owner for teamless project", async () => {
+        prismaMock.kit.findUnique.mockResolvedValue({
+            id: "project-1",
+            name: "Project One",
+            ownerId: "owner-2",
+            teamId: null,
+        });
+
+        const result = await inviteUserAction("project-1", "new.user@cinebrain.app");
+
+        expect(result).toEqual({ success: false, error: "Insufficient permissions" });
+        expect(prismaMock.team.create).not.toHaveBeenCalled();
+    });
+
+    it("creates team and invitation for owner when project has no team", async () => {
+        prismaMock.kit.findUnique.mockResolvedValue({
+            id: "project-1",
+            name: "Project One",
+            ownerId: "owner-1",
+            teamId: null,
+        });
+        prismaMock.team.create.mockResolvedValue({ id: "team-new" });
+
+        const result = await inviteUserAction("project-1", "New.User@CineBrain.App");
+
+        expect(prismaMock.team.create).toHaveBeenCalled();
+        expect(prismaMock.invitation.create).toHaveBeenCalledWith({
+            data: {
+                email: "new.user@cinebrain.app",
+                teamId: "team-new",
+                expires: expect.any(Date),
+            },
+        });
+        expect(result).toMatchObject({ success: true, reused: false });
+    });
+
+    it("enforces owner/admin role on existing team", async () => {
+        prismaMock.kit.findUnique.mockResolvedValue({
+            id: "project-1",
+            name: "Project One",
+            ownerId: "owner-1",
+            teamId: "team-1",
+        });
+        prismaMock.teamMember.findUnique.mockResolvedValue({ role: "MEMBER" });
+
+        const result = await inviteUserAction("project-1", "new.user@cinebrain.app");
+
+        expect(result).toEqual({ success: false, error: "Insufficient permissions" });
+        expect(prismaMock.invitation.create).not.toHaveBeenCalled();
     });
 });
