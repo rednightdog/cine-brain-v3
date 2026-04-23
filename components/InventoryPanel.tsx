@@ -1,15 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { InventoryEntry, InventoryItem } from './CineBrainInterface';
-import { Plus, X, Settings2, Minus, Trash2 } from 'lucide-react';
+import { Plus, X, Minus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor } from '@/lib/inventory-utils';
-import { Search, Info, AlertTriangle, ShieldCheck, Check, AlertCircle } from 'lucide-react';
+import { Search, AlertTriangle, ShieldCheck, Check } from 'lucide-react';
 import { validateCompatibility } from '@/lib/compatibility';
 import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
 import { LensGroupCard } from './ui/LensGroupCard';
-import { WarningBadge, WarningTooltip } from './ui/WarningBadge';
+import { WarningTooltip } from './ui/WarningBadge';
 import { getCompatibleAccessories } from '@/lib/camera-accessories';
 import { getProTips } from '@/lib/pro-tips';
 import { Lightbulb, ChevronDown } from 'lucide-react';
@@ -34,9 +34,7 @@ interface InventoryPanelProps {
     warnings: string[];
     onAddItem: (item: InventoryItem, targetCam?: string) => void;
     onUpdateItem: (id: string, updates: any) => void; // Used for config
-    onToggleOption: (entryIdx: number, childId: string) => void; // Requires idx unfortunately
     onQtyChange: (entryIdx: number, delta: number) => void;
-    onSetConfigEntry: (entry: any) => void; // Opens modal
     onOpenAdmin?: () => void;
 }
 
@@ -47,9 +45,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
         warnings,
         onAddItem,
         onUpdateItem,
-        onToggleOption,
         onQtyChange,
-        onSetConfigEntry,
         onOpenAdmin
     } = props;
 
@@ -213,9 +209,6 @@ export function InventoryPanel(props: InventoryPanelProps) {
             const hostDisplayName = (hostItem.name || "").toLowerCase();
             const hostSlug = (hostItem.model || hostItem.name).toLowerCase();
 
-            // Avoid double branding in the hostName if model already contains brand
-            const hostNameMatch = hostModel.includes(hostBrand) ? hostModel : `${hostBrand} ${hostModel}`;
-
             console.log(`[SmartAdd] Detection: Host=${hostDisplayName}, Brand=${hostBrand}, Model=${hostModel}`);
 
             const suggestions = catalog.filter(c => {
@@ -238,7 +231,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                             });
                             if (hasMatch) return true;
                         }
-                    } catch (e) { }
+                    } catch { }
                 }
 
                 // 2. Filters (Priority 2)
@@ -322,49 +315,6 @@ export function InventoryPanel(props: InventoryPanelProps) {
         }
         setReplicationData(null);
         setIsCatalogOpen(false);
-    };
-
-    // AI Search Logic
-    const searchSuggestions = useMemo(() => {
-        if (!searchQuery.trim()) return [];
-
-        const matches = catalog.filter(i =>
-            i.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            i.category.toLowerCase().includes(searchQuery.toLowerCase())
-        ).slice(0, 5);
-
-        if (matches.length === 0) {
-            return [];
-        }
-        return matches;
-    }, [searchQuery, catalog]);
-
-    const handleSearchSubmit = async (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if (!searchQuery.trim()) return;
-
-        // Check for EXACT match
-        const exactMatch = searchSuggestions.find(s => s.name.toLowerCase() === searchQuery.toLowerCase());
-
-        if (exactMatch) {
-            onAddItem(exactMatch as any);
-            setSearchQuery("");
-        } else if (searchSuggestions.length > 0) {
-            // Partial matches exist -> Do nothing, just show the list
-            // User can click if they want one of those.
-            return;
-        } else {
-            // No matches -> Autonomous AI Research (Draft Mode)
-            setIsResearching(true);
-            const res = await researchEquipmentDraftAction(searchQuery);
-            setIsResearching(false);
-
-            if (res.success && res.drafts) {
-                setDraftItems(res.drafts);
-            } else {
-                alert(res.error || "Could not research this item.");
-            }
-        }
     };
 
     // Handler when user confirms AI suggestion

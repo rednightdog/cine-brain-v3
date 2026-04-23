@@ -312,17 +312,6 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
         });
     };
 
-    const handleToggleOption = (entryIdx: number, childId: string) => {
-        const entry = inventory[entryIdx];
-        if (!entry) return;
-        const config = JSON.parse(entry.configJson || "{}");
-        const options = config.options || [];
-        const newOptions = options.includes(childId)
-            ? options.filter((id: string) => id !== childId)
-            : [...options, childId];
-        handleUpdateEntry(entry.id, { configJson: JSON.stringify({ ...config, options: newOptions }) });
-    };
-
     const handleQtyChange = (entryIdx: number, delta: number) => {
         const entry = inventory[entryIdx];
         if (!entry) return;
@@ -332,10 +321,6 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
         } else {
             handleUpdateEntry(entry.id, { quantity: newQty });
         }
-    };
-
-    const handleSetConfigEntry = (entry: InventoryEntry) => {
-        handleUpdateEntry(entry.id, { configJson: entry.configJson });
     };
 
     const handleExportPDF = async () => {
@@ -515,9 +500,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                                     warnings={warnings}
                                     onAddItem={handleAddEquipment}
                                     onUpdateItem={handleUpdateEntry}
-                                    onToggleOption={handleToggleOption}
                                     onQtyChange={handleQtyChange}
-                                    onSetConfigEntry={handleSetConfigEntry}
                                     onOpenAdmin={() => setIsAdminCatalogOpen(true)}
                                 />
                             </div>
