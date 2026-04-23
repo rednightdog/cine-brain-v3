@@ -18,6 +18,12 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Database Setup
+
+For Turkish step-by-step database and bulk inventory loading instructions, see:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/DB_LOAD_GUIDE_TR.md`
+
 ## Quality Checks
 
 Run lint:
