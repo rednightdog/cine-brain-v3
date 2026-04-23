@@ -16,8 +16,6 @@ export interface LensSpecs {
 }
 
 export function validateCompatibility(camera: CameraSpecs, lens: LensSpecs, hasAdapter: boolean = false): ValidationResult {
-    const results: ValidationResult[] = [];
-
     // 1. Mount Check
     // If mounts differ and no adapter is declared, it's a critical warning
     if (camera.mount.toLowerCase() !== lens.mount.toLowerCase() && !hasAdapter) {

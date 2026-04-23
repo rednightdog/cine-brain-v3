@@ -119,7 +119,7 @@ export async function generateCineListPDF(data: PDFItem[], project: ProjectData 
                 try {
                     const d = JSON.parse(project.datesJson);
                     if (d.shoot?.start) shootDates = `${d.shoot.start} — ${d.shoot.end || '...'}`;
-                } catch (e) { }
+                } catch { }
             }
 
             const metaFields = [
@@ -287,7 +287,7 @@ export async function generateCineListPDF(data: PDFItem[], project: ProjectData 
                                         doc.moveDown(0.2);
                                         doc.fontSize(7).font('Inter-Bold').fillColor('#FF3B30').text("🚨 HATA: VENICE 2 ANA KAYIT İÇİN SD KART KULLANAMAZ! LÜTFEN AXS KART SEÇİN.", LEFT_MARGIN + xOff, doc.y);
                                     }
-                                } catch (e) { }
+                                } catch { }
                             }
 
                             const specsList: string[] = [];

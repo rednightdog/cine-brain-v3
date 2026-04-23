@@ -216,7 +216,7 @@ async function searchWeb(query: string): Promise<string> {
                   **Snippet**: ${r.snippet}
                 `).join("\n");
             }
-        } catch (e) { console.error("Serper failed, trying SerpApi..."); }
+        } catch { console.error("Serper failed, trying SerpApi..."); }
     }
 
     // 2. Try SerpApi (Fallback)
@@ -337,7 +337,7 @@ export async function researchEquipment(query: string, forceLive: boolean = fals
                 const result = JSON.parse(cleanJson);
                 return Array.isArray(result) ? result.map((i: any) => ({ ...i, isAiResearched: true })) : [{ ...result, isAiResearched: true }];
             }
-        } catch (e) {
+        } catch {
             console.error("OpenAI failed, falling back to Gemini...");
         }
     }

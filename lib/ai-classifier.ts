@@ -1,5 +1,3 @@
-import { InventoryItem } from "@/components/CineBrainInterface";
-
 export interface ClassificationResult {
     category: 'CAM' | 'LNS' | 'SUP';
     subcategory: string;
