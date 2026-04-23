@@ -514,6 +514,67 @@ export async function inviteUserAction(projectId: string, email: string) {
     }
 }
 
+export async function inviteUserToTeamAction(teamId: string, email: string) {
+    try {
+        const session = await auth();
+        if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
+
+        const normalizedEmail = email.trim().toLowerCase();
+        if (!normalizedEmail || !normalizedEmail.includes("@")) {
+            return { success: false, error: "Invalid email" };
+        }
+
+        const requester = await prisma.teamMember.findUnique({
+            where: { teamId_userId: { teamId, userId: session.user.id } }
+        });
+        if (!requester || (requester.role !== "OWNER" && requester.role !== "ADMIN")) {
+            return { success: false, error: "Insufficient permissions" };
+        }
+
+        if (session.user.email?.toLowerCase() === normalizedEmail) {
+            return { success: false, error: "You are already in this team" };
+        }
+
+        const existingUser = await prisma.user.findUnique({
+            where: { email: normalizedEmail }
+        });
+        if (existingUser) {
+            const existingMembership = await prisma.teamMember.findUnique({
+                where: { teamId_userId: { teamId, userId: existingUser.id } }
+            });
+            if (existingMembership) {
+                return { success: false, error: "User is already a member of this team" };
+            }
+        }
+
+        const existingInvitation = await prisma.invitation.findFirst({
+            where: {
+                teamId,
+                email: normalizedEmail,
+                accepted: false,
+                expires: { gt: new Date() }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+        if (existingInvitation) {
+            return { success: true, invitation: existingInvitation, reused: true };
+        }
+
+        const invitation = await prisma.invitation.create({
+            data: {
+                email: normalizedEmail,
+                teamId,
+                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            }
+        });
+
+        revalidatePath("/dashboard");
+        return { success: true, invitation, reused: false };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to invite user to team") };
+    }
+}
+
 export async function getProjectTeamAction(projectId: string) {
     const project = await prisma.kit.findUnique({
         where: { id: projectId },

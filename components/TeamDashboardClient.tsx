@@ -14,7 +14,7 @@ import Link from "next/link";
 import type { Session } from "next-auth";
 import {
     createTeamAction,
-    inviteUserAction,
+    inviteUserToTeamAction,
     removeTeamMemberAction,
     deleteTeamAction,
     acceptInvitationAction
@@ -99,17 +99,10 @@ export default function TeamDashboardClient({
         setIsLoading(false);
     };
 
-    const handleInvite = async () => {
+    const handleInvite = async (teamId: string) => {
         if (!inviteEmail) return;
         setIsLoading(true);
-        // Using inviteUserAction (Note: current action takes projectId, let's fix that or handle team-based invites)
-        // For now, I'll pass a dummy project ID or update the action if needed.
-        // Actually, the current inviteUserAction in actions.ts is project-based.
-        // Let's create a dedicated teamInviteAction or keep it simple for now. 
-        // I will update actions.ts to include a more general inviteToTeamAction if needed.
-        // Actually, looking at actions.ts, inviteUserAction already handles team creation if missing.
-        // I'll use a specialized version for the dashboard.
-        const res = await inviteUserAction("", inviteEmail); // Using empty string for projectId for now
+        const res = await inviteUserToTeamAction(teamId, inviteEmail);
         if (res.success) {
             alert("Invitation sent!");
             setInviteEmail("");
@@ -285,7 +278,7 @@ export default function TeamDashboardClient({
                                             type="email"
                                         />
                                         <button
-                                            onClick={handleInvite}
+                                            onClick={() => handleInvite(team.id)}
                                             disabled={isLoading || !inviteEmail}
                                             className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black"
                                         >
