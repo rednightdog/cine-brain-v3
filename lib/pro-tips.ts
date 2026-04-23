@@ -3,6 +3,12 @@ export interface ProTipRule {
     advice: string;
 }
 
+type KitItemLike = {
+    brand?: string | null;
+    model?: string | null;
+    name?: string | null;
+};
+
 const RULES: ProTipRule[] = [
     {
         triggers: ['Venice 2', 'Rialto 2'],
@@ -33,10 +39,10 @@ const RULES: ProTipRule[] = [
 /**
  * Returns professional advice based on the current kit items.
  */
-export function getProTips(inventory: any[]): string[] {
+export function getProTips(inventory: KitItemLike[]): string[] {
     const tips: string[] = [];
     const kitText = inventory.map(item =>
-        `${item.brand} ${item.model} ${item.name}`.toLowerCase()
+        `${item.brand || ""} ${item.model || ""} ${item.name || ""}`.toLowerCase()
     ).join(' ');
 
     RULES.forEach(rule => {

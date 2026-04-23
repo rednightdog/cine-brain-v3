@@ -2,11 +2,61 @@
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
-import { researchEquipment, normalizeName } from "@/lib/catalog-research";
+import { researchEquipment, normalizeName, type TechnicalSpecs } from "@/lib/catalog-research";
 import bcrypt from "bcryptjs";
 import { auth } from "@/auth";
+import { Prisma } from "@prisma/client";
 
-export async function createProjectAction(data: any) {
+type ProjectPayload = {
+    name: string;
+    productionCo?: string | null;
+    producer?: string | null;
+    director?: string | null;
+    cinematographer?: string | null;
+    assistantCamera?: string | null;
+    rentalHouse?: string | null;
+    testDates?: string | null;
+    shootDates?: string | null;
+    contactsJson?: string | null;
+    datesJson?: string | null;
+};
+
+type KitItemCreateInput = {
+    equipmentId?: string | null;
+    catalogId?: string | null;
+    assignedCam?: string;
+    quantity?: number | string;
+    configJson?: string;
+};
+
+type KitItemUpdateInput = {
+    quantity?: number;
+    configJson?: string;
+    assignedCam?: string;
+};
+
+type DraftCatalogInput = TechnicalSpecs | TechnicalSpecs[];
+
+type CustomItemInput = {
+    name?: string | null;
+    brand?: string | null;
+    model?: string | null;
+    category: string;
+    subcategory?: string | null;
+    description?: string | null;
+};
+
+function getErrorMessage(error: unknown, fallback = "Unexpected error"): string {
+    if (error instanceof Error) return error.message;
+    return fallback;
+}
+
+function getOptionalStringField(source: Record<string, unknown>, key: string): string | undefined {
+    const value = source[key];
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export async function createProjectAction(data: ProjectPayload) {
     try {
         const session = await auth();
         if (!session?.user?.id) {
@@ -14,7 +64,7 @@ export async function createProjectAction(data: any) {
         }
         console.log("Create Project Session User ID:", session.user.id);
 
-        const createData: any = {
+        const createData: Prisma.KitUncheckedCreateInput = {
             name: data.name,
             productionCo: data.productionCo,
             producer: data.producer,
@@ -36,9 +86,9 @@ export async function createProjectAction(data: any) {
 
         revalidatePath("/");
         return { success: true, project: newProject };
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error(e);
-        return { success: false, error: e.message || "Failed to create project" };
+        return { success: false, error: getErrorMessage(e, "Failed to create project") };
     }
 }
 
@@ -50,9 +100,9 @@ export async function getProjectItemsAction(projectId: string) {
     return items;
 }
 
-export async function updateProjectAction(id: string, data: any) {
+export async function updateProjectAction(id: string, data: ProjectPayload) {
     try {
-        const updateData: any = {
+        const updateData: Prisma.KitUpdateInput = {
             name: data.name,
             productionCo: data.productionCo,
             producer: data.producer,
@@ -73,8 +123,8 @@ export async function updateProjectAction(id: string, data: any) {
         });
         revalidatePath("/");
         return { success: true, project: updatedProject };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to update project") };
     }
 }
 
@@ -83,14 +133,14 @@ export async function deleteProjectAction(id: string) {
         await prisma.kit.delete({ where: { id } });
         revalidatePath("/");
         return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to delete project") };
     }
 }
 
 // --- ITEM ACTIONS ---
 
-export async function addKitItemAction(projectId: string, data: any) {
+export async function addKitItemAction(projectId: string, data: KitItemCreateInput) {
     try {
         console.log("Add Item Payload:", { projectId, ...data });
 
@@ -115,15 +165,15 @@ export async function addKitItemAction(projectId: string, data: any) {
 
         revalidatePath("/");
         return { success: true, item: newItem };
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Add Item Error:", e);
-        return { success: false, error: e.message || "Database create failed" };
+        return { success: false, error: getErrorMessage(e, "Database create failed") };
     }
 }
 
-export async function updateKitItemAction(itemId: string, data: any) {
+export async function updateKitItemAction(itemId: string, data: KitItemUpdateInput) {
     try {
-        const updateData: any = {
+        const updateData: Prisma.KitItemUpdateInput = {
             quantity: data.quantity,
             configJson: data.configJson,
             assignedCam: data.assignedCam
@@ -143,9 +193,9 @@ export async function updateKitItemAction(itemId: string, data: any) {
 
         revalidatePath("/");
         return { success: true, item: updatedItem };
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Update Item Error:", e);
-        return { success: false, error: e.message };
+        return { success: false, error: getErrorMessage(e, "Failed to update item") };
     }
 }
 
@@ -164,9 +214,9 @@ export async function deleteKitItemAction(itemId: string) {
 
         revalidatePath("/");
         return { success: true };
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Delete Item Error:", e);
-        return { success: false, error: e.message };
+        return { success: false, error: getErrorMessage(e, "Failed to delete item") };
     }
 }
 
@@ -176,15 +226,9 @@ export async function getGlobalCatalogAction() {
     const session = await auth();
     const userId = session?.user?.id;
 
-    const whereClause: any = {
-        OR: [
-            { isPrivate: false }, // Public items
-        ]
-    };
-
-    if (userId) {
-        whereClause.OR.push({ ownerId: userId }); // User's private items
-    }
+    const orClauses: Prisma.EquipmentItemWhereInput[] = [{ isPrivate: false }];
+    if (userId) orClauses.push({ ownerId: userId });
+    const whereClause: Prisma.EquipmentItemWhereInput = { OR: orClauses };
 
     return await prisma.equipmentItem.findMany({
         where: whereClause,
@@ -202,8 +246,8 @@ export async function deleteEquipmentAction(id: string) {
         });
         revalidatePath("/");
         return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to delete equipment") };
     }
 }
 
@@ -228,7 +272,7 @@ export async function researchAndAddEquipmentAction(query: string) {
         const specs = results[0]; // Take the first result
 
         // 3. Create Main Item with hierarchical categorization
-        const mainItem = await (prisma.equipmentItem as any).create({
+        const mainItem = await prisma.equipmentItem.create({
             data: {
                 name: specs.brand + " " + specs.model,
                 brand: specs.brand,
@@ -250,7 +294,7 @@ export async function researchAndAddEquipmentAction(query: string) {
         // 4. Create Accessories if any
         if (specs.accessories) {
             for (const acc of specs.accessories) {
-                await (prisma.equipmentItem as any).create({
+                await prisma.equipmentItem.create({
                     data: {
                         name: acc.brand + " " + acc.model,
                         brand: acc.brand,
@@ -270,9 +314,9 @@ export async function researchAndAddEquipmentAction(query: string) {
 
         revalidatePath("/");
         return { success: true, item: mainItem };
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Research Error:", e);
-        return { success: false, error: e.message };
+        return { success: false, error: getErrorMessage(e, "Failed to research equipment") };
     }
 }
 
@@ -281,18 +325,18 @@ export async function researchEquipmentDraftAction(query: string) {
         const specs = await researchEquipment(query);
         if (!specs || specs.length === 0) return { success: false, error: "AI could not find detailed specs." };
         return { success: true, drafts: specs };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to create draft") };
     }
 }
 
-export async function saveDraftsToCatalogAction(input: any) {
+export async function saveDraftsToCatalogAction(input: DraftCatalogInput) {
     console.log("saveDraftsToCatalogAction started", Array.isArray(input) ? input.length : 1);
     // Handle array or single item
-    const drafts = Array.isArray(input) ? input : [input];
+    const drafts: TechnicalSpecs[] = Array.isArray(input) ? input : [input];
 
     try {
-        const savedItems = [];
+        let savedCount = 0;
         for (const draft of drafts) {
             console.log("Saving draft:", draft.brand, draft.model);
             let finalCategory = draft.category;
@@ -308,6 +352,10 @@ export async function saveDraftsToCatalogAction(input: any) {
                 console.log(`Auto-corrected category for ${draft.model} to LNS`);
             }
 
+            const draftMeta = draft as unknown as Record<string, unknown>;
+            const irisRange = getOptionalStringField(draftMeta, "iris_range");
+            const closeFocus = getOptionalStringField(draftMeta, "close_focus");
+
             // 1. Create Main Item
             const mainItem = await prisma.equipmentItem.create({
                 data: {
@@ -322,7 +370,7 @@ export async function saveDraftsToCatalogAction(input: any) {
                     lens_type: draft.lens_type,
                     front_diameter_mm: draft.front_diameter_mm,
                     weight_kg: draft.weight_kg,
-                    description: `AI Researched. ${draft.iris_range ? `Iris: ${draft.iris_range}. ` : ''}${draft.close_focus ? `CF: ${draft.close_focus}. ` : ''}${draft.description || ''}`,
+                    description: `AI Researched. ${irisRange ? `Iris: ${irisRange}. ` : ''}${closeFocus ? `CF: ${closeFocus}. ` : ''}${draft.description || ''}`,
                     daily_rate_est: 0,
                     isAiResearched: true, // Mark as AI Researched
                     isVerified: false,
@@ -353,16 +401,16 @@ export async function saveDraftsToCatalogAction(input: any) {
                     });
                 }
             }
-            savedItems.push(mainItem);
+            savedCount++;
         }
 
         revalidatePath("/");
-        console.log("Save complete. Count:", savedItems.length);
-        return { success: true, count: savedItems.length };
-    } catch (e: any) {
+        console.log("Save complete. Count:", savedCount);
+        return { success: true, count: savedCount };
+    } catch (e: unknown) {
         console.error("Save Draft Error:", e);
         // Return clear error message
-        return { success: false, error: "DB Error: " + e.message };
+        return { success: false, error: "DB Error: " + getErrorMessage(e) };
     }
 }
 
@@ -377,8 +425,8 @@ export async function approveEquipmentAction(id: string) {
         });
         revalidatePath("/");
         return { success: true, item: approvedItem };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to approve equipment") };
     }
 }
 
@@ -389,8 +437,8 @@ export async function getPendingEquipmentAction() {
             orderBy: { createdAt: 'desc' }
         });
         return { success: true, items: pending };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to fetch pending items") };
     }
 }
 
@@ -419,8 +467,8 @@ export async function registerUserAction(formData: FormData) {
         });
 
         return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to register user") };
     }
 }
 
@@ -461,8 +509,8 @@ export async function inviteUserAction(projectId: string, email: string) {
         });
 
         return { success: true, invitation };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to invite user") };
     }
 }
 
@@ -497,8 +545,8 @@ export async function createTeamAction(name: string) {
 
         revalidatePath("/dashboard");
         return { success: true, team };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to create team") };
     }
 }
 
@@ -520,8 +568,8 @@ export async function getUserTeamsAction() {
         });
 
         return { success: true, teams };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to fetch teams") };
     }
 }
 
@@ -556,8 +604,8 @@ export async function acceptInvitationAction(token: string) {
         revalidatePath("/dashboard");
         revalidatePath("/");
         return { success: true, teamId: invitation.teamId };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to accept invitation") };
     }
 }
 
@@ -588,8 +636,8 @@ export async function removeTeamMemberAction(teamId: string, userId: string) {
 
         revalidatePath("/dashboard");
         return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to remove team member") };
     }
 }
 
@@ -609,8 +657,8 @@ export async function deleteTeamAction(teamId: string) {
         revalidatePath("/dashboard");
         revalidatePath("/");
         return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to delete team") };
     }
 }
 
@@ -629,8 +677,8 @@ export async function getPendingInvitationsAction() {
         });
 
         return { success: true, invitations };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to fetch invitations") };
     }
 }
 
@@ -648,14 +696,16 @@ export async function checkForUpdatesAction(projectId: string, currentVersion: s
 
 // --- CUSTOM ITEM ACTIONS ---
 
-export async function createCustomItemAction(data: any) {
+export async function createCustomItemAction(data: CustomItemInput) {
     try {
         const session = await auth();
         if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
 
         const newItem = await prisma.equipmentItem.create({
             data: {
-                name: data.model ? `${data.brand} ${data.model}` : data.name,
+                name: data.model
+                    ? `${data.brand || "Generic"} ${data.model}`
+                    : (data.name || `${data.brand || "Generic"} Custom`),
                 brand: data.brand || "Generic",
                 model: data.model || "Custom",
                 category: data.category,
@@ -671,9 +721,9 @@ export async function createCustomItemAction(data: any) {
 
         revalidatePath("/");
         return { success: true, item: newItem };
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Create Custom Item Error:", e);
-        return { success: false, error: e.message };
+        return { success: false, error: getErrorMessage(e, "Failed to create custom item") };
     }
 }
 
@@ -696,7 +746,7 @@ export async function deleteCustomItemAction(id: string) {
 
         revalidatePath("/");
         return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e, "Failed to delete custom item") };
     }
 }

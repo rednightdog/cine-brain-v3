@@ -8,13 +8,10 @@ import {
     Trash2,
     UserPlus,
     ExternalLink,
-    ArrowLeft,
-    CheckCircle2,
-    XCircle,
-    Copy,
-    Settings
+    ArrowLeft
 } from "lucide-react";
 import Link from "next/link";
+import type { Session } from "next-auth";
 import {
     createTeamAction,
     inviteUserAction,
@@ -24,18 +21,62 @@ import {
 } from "@/app/actions";
 import { useRouter } from "next/navigation";
 
+type TeamUser = {
+    name?: string | null;
+    email?: string | null;
+};
+
+type TeamMember = {
+    id: string;
+    userId: string;
+    role: string;
+    user: TeamUser;
+};
+
+type TeamKit = {
+    id: string;
+    name: string;
+};
+
+type TeamInvitation = {
+    id: string;
+    email: string;
+    token: string;
+    team?: { name: string };
+};
+
+type TeamSummary = {
+    id: string;
+    name: string;
+    members?: TeamMember[];
+    kits?: TeamKit[];
+    invitations?: TeamInvitation[];
+};
+
+type TeamDashboardClientProps = {
+    initialTeams: TeamSummary[];
+    inboundInvitations?: TeamInvitation[];
+    session: Session | null;
+};
+
+function normalizeTeam(team: { id: string; name: string } & Partial<TeamSummary>): TeamSummary {
+    return {
+        id: team.id,
+        name: team.name,
+        members: team.members ?? [],
+        kits: team.kits ?? [],
+        invitations: team.invitations ?? []
+    };
+}
+
 export default function TeamDashboardClient({
     initialTeams,
     inboundInvitations = [],
     session
-}: {
-    initialTeams: any[],
-    inboundInvitations?: any[],
-    session: any
-}) {
+}: TeamDashboardClientProps) {
     const router = useRouter();
-    const [teams, setTeams] = useState(initialTeams);
-    const [invitations, setInvitations] = useState(inboundInvitations);
+    const [teams, setTeams] = useState<TeamSummary[]>(initialTeams);
+    const [invitations, setInvitations] = useState<TeamInvitation[]>(inboundInvitations);
     const [isCreatingTeam, setIsCreatingTeam] = useState(false);
     const [newTeamName, setNewTeamName] = useState("");
     const [invitingTeamId, setInvitingTeamId] = useState<string | null>(null);
@@ -47,7 +88,8 @@ export default function TeamDashboardClient({
         setIsLoading(true);
         const res = await createTeamAction(newTeamName);
         if (res.success && res.team) {
-            setTeams([res.team, ...teams]);
+            const createdTeam = res.team as { id: string; name: string } & Partial<TeamSummary>;
+            setTeams([normalizeTeam(createdTeam), ...teams]);
             setNewTeamName("");
             setIsCreatingTeam(false);
             router.refresh();
@@ -57,7 +99,7 @@ export default function TeamDashboardClient({
         setIsLoading(false);
     };
 
-    const handleInvite = async (teamId: string) => {
+    const handleInvite = async () => {
         if (!inviteEmail) return;
         setIsLoading(true);
         // Using inviteUserAction (Note: current action takes projectId, let's fix that or handle team-based invites)
@@ -145,11 +187,11 @@ export default function TeamDashboardClient({
                             <Mail size={12} /> Inbound Invitations
                         </h2>
                         <div className="space-y-3">
-                            {invitations.map((inv: any) => (
+                            {invitations.map((inv) => (
                                 <div key={inv.id} className="bg-white/10 backdrop-blur-sm p-4 rounded-2xl flex items-center justify-between border border-white/20">
                                     <div>
-                                        <p className="text-xs font-bold uppercase tracking-tight">You're invited to join</p>
-                                        <h3 className="text-lg font-black">{inv.team.name}</h3>
+                                        <p className="text-xs font-bold uppercase tracking-tight">You&apos;re invited to join</p>
+                                        <h3 className="text-lg font-black">{inv.team?.name || "Team"}</h3>
                                     </div>
                                     <button
                                         onClick={() => handleAcceptInvitation(inv.token)}
@@ -243,7 +285,7 @@ export default function TeamDashboardClient({
                                             type="email"
                                         />
                                         <button
-                                            onClick={() => handleInvite(team.id)}
+                                            onClick={handleInvite}
                                             disabled={isLoading || !inviteEmail}
                                             className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black"
                                         >
@@ -256,7 +298,7 @@ export default function TeamDashboardClient({
                                 <div className="p-4">
                                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 px-2">Team Members</h3>
                                     <div className="space-y-1">
-                                        {team.members?.map((member: any) => (
+                                        {team.members?.map((member) => (
                                             <div key={member.id} className="flex items-center justify-between p-2 hover:bg-[#F2F2F7] rounded-xl transition-colors group">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-8 h-8 bg-[#1C1C1E] rounded-full flex items-center justify-center text-white text-xs font-bold">
@@ -294,7 +336,7 @@ export default function TeamDashboardClient({
                                                 <Mail size={10} /> Pending Invitations
                                             </h3>
                                             <div className="space-y-1">
-                                                {team.invitations.map((inv: any) => (
+                                                {team.invitations.map((inv) => (
                                                     <div key={inv.id} className="flex items-center justify-between p-2 rounded-xl">
                                                         <div className="flex items-center gap-3">
                                                             <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 border border-dashed border-gray-300">
@@ -314,7 +356,7 @@ export default function TeamDashboardClient({
                                         <div className="mt-4 pt-4 border-t border-[#F2F2F7]">
                                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 px-2">Shared Projects</h3>
                                             <div className="grid grid-cols-2 gap-2 px-2">
-                                                {team.kits.map((kit: any) => (
+                                                {team.kits.map((kit) => (
                                                     <Link
                                                         key={kit.id}
                                                         href={`/?project=${kit.id}`}
@@ -337,6 +379,6 @@ export default function TeamDashboardClient({
     );
 }
 
-function cn(...classes: any[]) {
+function cn(...classes: Array<string | false | null | undefined>) {
     return classes.filter(Boolean).join(" ");
 }

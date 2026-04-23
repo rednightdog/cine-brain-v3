@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useTransition, useOptimistic } from "react";
+import type { Session } from "next-auth";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import ProjectDashboard from "./ProjectDashboard";
@@ -11,17 +12,14 @@ import {
     addKitItemAction,
     updateKitItemAction,
     deleteKitItemAction,
-    checkForUpdatesAction,
-    getProjectItemsAction,
     getProjectTeamAction,
     inviteUserAction
 } from "@/app/actions";
 import { generateCineListPDF, type PDFItem } from "@/lib/pdf-generator";
-import { X, Layout, FileText, Camera, ShieldCheck, Lightbulb, UserPlus, RefreshCw, Users, RefreshCcw, User } from "lucide-react";
+import { X, Layout, FileText, Camera, ShieldCheck, UserPlus, Users, RefreshCcw, User } from "lucide-react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useProjectSync } from "@/hooks/useProjectSync";
 import Link from "next/link";
-import { CATEGORIES, isCameraBody, getCameraColor } from "@/lib/inventory-utils";
+import { isCameraBody } from "@/lib/inventory-utils";
 
 // Sub Components
 import { ProjectMetadataPanel } from "./ProjectMetadataPanel";
@@ -56,7 +54,7 @@ export type InventoryItem = {
     image_circle_mm?: number | null;
     isAiResearched?: boolean;
     isVerified?: boolean;
-    status?: 'PENDING' | 'APPROVED';
+    status?: string;
     sourceUrl?: string | null;
     parentId?: string | null;
     imageUrl?: string | null;
@@ -64,7 +62,24 @@ export type InventoryItem = {
     specs_json?: string | null;
     isPrivate?: boolean;
     ownerId?: string | null;
+    isAIGenerated?: boolean;
 }
+
+type ProjectItem = {
+    id: string;
+    equipmentId?: string | null;
+    customName?: string | null;
+    customBrand?: string | null;
+    customModel?: string | null;
+    customCategory?: string | null;
+    customSubcategory?: string | null;
+    assignedCam?: string | null;
+    quantity?: number | null;
+    notes?: string | null;
+    configJson?: string | null;
+    parentId?: string | null;
+    equipment?: InventoryItem | null;
+};
 
 export type InventoryEntry = {
     id: string;
@@ -82,6 +97,7 @@ export type InventoryEntry = {
     sensor_size?: string | null;
     weight_kg?: number | null;
     front_diameter_mm?: number | null;
+    specs_json?: string | null;
 }
 
 export type ProjectWithItems = {
@@ -97,12 +113,43 @@ export type ProjectWithItems = {
     shootDates?: string | null;
     contactsJson?: string | null;
     datesJson?: string | null;
-    items: any[];
+    items: ProjectItem[];
     version?: number;
     updatedAt: Date;
 }
 
-export default function CineBrainInterface({ initialItems, initialProjects, session }: { initialItems: InventoryItem[], initialProjects: any[], session: any }) {
+type ProjectMetadataInput = {
+    name: string;
+    productionCo?: string | null;
+    producer?: string | null;
+    director?: string | null;
+    cinematographer?: string | null;
+    assistantCamera?: string | null;
+    rentalHouse?: string | null;
+    testDates?: string | null;
+    shootDates?: string | null;
+    contactsJson?: string | null;
+    datesJson?: string | null;
+};
+
+type KitItemUpdatePayload = {
+    quantity?: number;
+    configJson?: string;
+    assignedCam?: string;
+};
+
+type OptimisticAction =
+    | { type: "add"; payload: ProjectItem }
+    | { type: "delete"; payload: string }
+    | { type: "update"; payload: { id: string; updates: Partial<ProjectItem> } };
+
+type CineBrainInterfaceProps = {
+    initialItems: InventoryItem[];
+    initialProjects: ProjectWithItems[];
+    session: Session | null;
+};
+
+export default function CineBrainInterface({ initialItems, initialProjects, session }: CineBrainInterfaceProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -110,11 +157,11 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
 
     // Projects & Selection
     const [activeProjectId, _setActiveProjectId] = useState<string | null>(projectParam);
-    const [projects, setProjects] = useState<ProjectWithItems[]>((initialProjects as ProjectWithItems[]) || []);
+    const [projects, setProjects] = useState<ProjectWithItems[]>(initialProjects || []);
 
     // UI Logic State
     const [activeMobileTab, setActiveMobileTab] = useState<'info' | 'docs' | 'gear' | 'team' | 'profile'>('gear');
-    const [warnings, setWarnings] = useState<string[]>([]);
+    const warnings: string[] = [];
 
     // Modal State
     const [activeSheet, setActiveSheet] = useState<{
@@ -123,12 +170,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
         copyFromEntry?: InventoryEntry
     }>({ type: null });
 
-    const [lastSyncVersion, setLastSyncVersion] = useState<string>("");
-    const [isSaving, setIsSaving] = useState(false);
-    const [isPending, startTransition] = useTransition();
-
-    // --- LIVE SYNC POLLING ---
-    const { setLastVersion } = useProjectSync(activeProjectId);
+    const [, startTransition] = useTransition();
 
     const [isAdminCatalogOpen, setIsAdminCatalogOpen] = useState(false);
 
@@ -145,13 +187,15 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     useEffect(() => {
         const p = searchParams.get('project');
         if (p !== activeProjectId) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing URL query param to local selected project
             _setActiveProjectId(p);
         }
-    }, [searchParams]);
+    }, [searchParams, activeProjectId]);
 
     useEffect(() => {
         if (initialProjects) {
-            setProjects(initialProjects as ProjectWithItems[]);
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- refresh local project list when server payload changes
+            setProjects(initialProjects);
         }
     }, [initialProjects]);
 
@@ -159,16 +203,16 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     const activeProject = activeProjectId ? (projects.find(p => p.id === activeProjectId) || null) : null;
     const items = useMemo(() => activeProject?.items || [], [activeProject]);
 
-    const [optimisticItems, addOptimisticItem] = useOptimistic(
+    const [optimisticItems, addOptimisticItem] = useOptimistic<ProjectItem[], OptimisticAction>(
         items,
-        (currentItems: any[], action: { type: 'add' | 'delete' | 'update', payload: any }) => {
+        (currentItems, action) => {
             switch (action.type) {
                 case 'add':
                     return [...currentItems, action.payload];
                 case 'delete':
-                    return currentItems.filter((item: any) => item.id !== action.payload);
+                    return currentItems.filter((item) => item.id !== action.payload);
                 case 'update':
-                    return currentItems.map((item: any) =>
+                    return currentItems.map((item) =>
                         item.id === action.payload.id ? { ...item, ...action.payload.updates } : item
                     );
                 default:
@@ -178,9 +222,9 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     );
 
     const inventory = useMemo(() => {
-        return (optimisticItems as any[]).map(item => ({
+        return optimisticItems.map((item) => ({
             id: item.id,
-            equipmentId: item.equipmentId,
+            equipmentId: item.equipmentId ?? null,
             name: item.equipment?.name || item.customName || "Unknown",
             brand: item.equipment?.brand || item.customBrand || "",
             model: item.equipment?.model || item.customModel || "",
@@ -190,7 +234,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             quantity: item.quantity || 1,
             notes: item.notes || "",
             configJson: item.configJson || "{}",
-            parentId: item.parentId,
+            parentId: item.parentId ?? null,
             sensor_size: item.equipment?.sensor_size,
             weight_kg: item.equipment?.weight_kg,
             front_diameter_mm: item.equipment?.front_diameter_mm,
@@ -234,7 +278,6 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                 }
             });
 
-            setIsSaving(true);
             const res = await addKitItemAction(activeProjectId, {
                 catalogId: item.id,
                 assignedCam: camToAssign,
@@ -246,31 +289,26 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             } else {
                 alert(res.error);
             }
-            setIsSaving(false);
         });
     };
 
     const handleDeleteEntry = async (id: string) => {
         startTransition(async () => {
             addOptimisticItem({ type: 'delete', payload: id });
-            setIsSaving(true);
             const res = await deleteKitItemAction(id);
             if (res.success) {
                 router.refresh();
             }
-            setIsSaving(false);
         });
     };
 
-    const handleUpdateEntry = async (id: string, updates: any) => {
+    const handleUpdateEntry = async (id: string, updates: KitItemUpdatePayload) => {
         startTransition(async () => {
             addOptimisticItem({ type: 'update', payload: { id, updates } });
-            setIsSaving(true);
             const res = await updateKitItemAction(id, updates);
             if (res.success) {
                 router.refresh();
             }
-            setIsSaving(false);
         });
     };
 
@@ -296,7 +334,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
         }
     };
 
-    const handleSetConfigEntry = (entry: any) => {
+    const handleSetConfigEntry = (entry: InventoryEntry) => {
         handleUpdateEntry(entry.id, { configJson: entry.configJson });
     };
 
@@ -322,28 +360,24 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                 specs_json: item.specs_json
             };
         });
-        const url = await generateCineListPDF(pdfData, activeProject as any);
+        const url = await generateCineListPDF(pdfData, activeProject);
         window.open(url, '_blank');
     };
 
-    const handleUpdateMetadata = async (metadata: any) => {
+    const handleUpdateMetadata = async (metadata: ProjectMetadataInput) => {
         if (!activeProjectId) return;
-        setIsSaving(true);
         const res = await updateProjectAction(activeProjectId, metadata);
         if (res.success) {
             router.refresh();
         }
-        setIsSaving(false);
     };
 
-    const handleCreateProject = async (data: any) => {
-        setIsSaving(true);
+    const handleCreateProject = async (data: ProjectMetadataInput) => {
         const res = await createProjectAction(data);
         if (res.success && res.project) {
             setActiveProjectId(res.project.id);
             router.refresh();
         }
-        setIsSaving(false);
     };
 
     const handleDeleteProject = async (id: string) => {
@@ -362,7 +396,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                 projects={projects}
                 onSelectProject={setActiveProjectId}
                 onCreateProject={handleCreateProject}
-                onUpdateProject={handleUpdateMetadata}
+                onUpdateProject={async (_id, data) => handleUpdateMetadata(data)}
                 onDeleteProject={handleDeleteProject}
                 session={session}
             />
@@ -457,7 +491,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                         <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 custom-scrollbar">
                             <ProjectMetadataPanel
                                 project={activeProject!}
-                                onUpdateProject={async (id, data) => handleUpdateMetadata(data)}
+                                onUpdateProject={async (_id, data) => handleUpdateMetadata(data)}
                                 onInviteTeam={() => setActiveSheet({ type: 'invite' })}
                             />
                         </div>
@@ -505,7 +539,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                             <div className="mt-8">
                                 <ProjectMetadataPanel
                                     project={activeProject!}
-                                    onUpdateProject={async (id, data) => handleUpdateMetadata(data)}
+                                    onUpdateProject={async (_id, data) => handleUpdateMetadata(data)}
                                     onInviteTeam={() => setActiveSheet({ type: 'invite' })}
                                 />
                             </div>
@@ -575,10 +609,25 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
 
 // --- SUBMODAL COMPONENTS ---
 
+type TeamPanelData = {
+    members?: Array<{
+        id: string;
+        role: string;
+        user?: {
+            name?: string | null;
+            email?: string | null;
+        };
+    }>;
+    invitations?: Array<{
+        id: string;
+        email: string;
+    }>;
+} | null;
+
 function TeamPanel({ projectId }: { projectId: string }) {
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
-    const [team, setTeam] = useState<any>(null);
+    const [team, setTeam] = useState<TeamPanelData>(null);
 
     useEffect(() => {
         getProjectTeamAction(projectId).then(setTeam);
@@ -623,7 +672,7 @@ function TeamPanel({ projectId }: { projectId: string }) {
             <div className="space-y-4 pt-4">
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] ml-1 border-b border-[#F1F5F9] pb-2">Active Collaborators</h3>
                 <div className="max-h-[200px] overflow-y-auto space-y-3 pr-2 scrollbar-thin">
-                    {team?.members?.map((m: any) => (
+                    {team?.members?.map((m) => (
                         <div key={m.id} className="flex items-center justify-between p-4 bg-[#F8FAFC] rounded-2xl border border-[#F1F5F9]">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-[#1A1A1A] rounded-full flex items-center justify-center text-white font-bold text-xs">
@@ -640,7 +689,7 @@ function TeamPanel({ projectId }: { projectId: string }) {
                         </div>
                     ))}
 
-                    {team?.invitations?.map((inv: any) => (
+                    {team?.invitations?.map((inv) => (
                         <div key={inv.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-[#E2E8F0] border-dashed">
                             <div className="flex items-center gap-3 opacity-60">
                                 <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 font-bold text-xs">

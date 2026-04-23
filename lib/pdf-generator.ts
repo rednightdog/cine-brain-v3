@@ -1,4 +1,3 @@
-// @ts-ignore
 import PDFDocument from 'pdfkit/js/pdfkit.standalone';
 import blobStream from 'blob-stream';
 
@@ -53,7 +52,7 @@ export async function generateCineListPDF(data: PDFItem[], project: ProjectData 
             const doc = new PDFDocument({
                 size: 'A4',
                 margins: { top: 40, bottom: 20, left: 40, right: 40 },
-                // @ts-ignore
+                // @ts-expect-error autoPaging exists at runtime but is missing in bundled typings
                 autoPaging: false // DISABLE AUTO PAGING
             });
             const stream = doc.pipe(blobStream());

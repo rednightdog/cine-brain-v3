@@ -12,7 +12,19 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Historical snapshots
+    "backups/**",
   ]),
+  // Data/maintenance scripts are operational utilities, not runtime app code.
+  {
+    files: ["scripts/**/*.ts", "prisma/seed*.ts", "prisma/seed-*.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "prefer-const": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

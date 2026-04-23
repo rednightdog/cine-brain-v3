@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getGlobalCatalogAction, deleteEquipmentAction, approveEquipmentAction } from "@/app/actions";
 import { X, Trash2, ShieldCheck, Search, Filter, CheckCircle, ExternalLink } from "lucide-react";
 import { InventoryItem } from "./CineBrainInterface";
@@ -16,16 +16,24 @@ export function CatalogManager({ isOpen, onClose }: CatalogManagerProps) {
     const [filter, setFilter] = useState<'ALL' | 'QUEUE' | 'VERIFIED'>('QUEUE'); // Default to Queue
     const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
+    const refreshCatalog = useCallback(async () => {
+        const data = await getGlobalCatalogAction();
+        const normalizedCatalog: InventoryItem[] = data.map((item) => ({
+            ...item,
+            status:
+                item.status === "PENDING" || item.status === "APPROVED"
+                    ? item.status
+                    : undefined
+        }));
+        setCatalog(normalizedCatalog);
+    }, []);
+
     useEffect(() => {
         if (isOpen) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on open is intentional for admin modal freshness
             refreshCatalog();
         }
-    }, [isOpen]);
-
-    const refreshCatalog = async () => {
-        const data = await getGlobalCatalogAction();
-        setCatalog(data as any);
-    };
+    }, [isOpen, refreshCatalog]);
 
     const handleDelete = async (id: string) => {
         if (confirmingDelete !== id) {

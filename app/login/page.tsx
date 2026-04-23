@@ -1,6 +1,5 @@
 'use client';
 
-import { Suspense, useActionState } from 'react';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
 import { signIn } from 'next-auth/react'; // Client side sign-in
 import { useRouter } from 'next/navigation';

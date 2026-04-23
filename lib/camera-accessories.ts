@@ -13,7 +13,7 @@ export interface CameraAccessory {
     description: string;
     compatible_cameras: string[]; // Camera IDs this accessory works with
     weight_kg?: number;
-    specs?: Record<string, any>;
+    specs?: Record<string, unknown>;
 }
 
 export const cameraAccessories: CameraAccessory[] = [

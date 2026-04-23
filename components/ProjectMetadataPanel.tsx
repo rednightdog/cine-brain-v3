@@ -1,9 +1,22 @@
 import React, { useState } from 'react';
 import { ProjectWithItems } from './CineBrainInterface';
 
+type ProjectUpdateInput = {
+    name: string;
+    productionCo: string;
+    producer: string;
+    director: string;
+    cinematographer: string;
+    assistantCamera: string;
+    rentalHouse: string;
+    testDates: string;
+    shootDates: string;
+    datesJson: string;
+};
+
 interface ProjectMetadataPanelProps {
     project: ProjectWithItems;
-    onUpdateProject: (id: string, data: any) => Promise<void>;
+    onUpdateProject: (id: string, data: ProjectUpdateInput) => Promise<void>;
     onInviteTeam?: () => void;
 }
 
@@ -11,7 +24,7 @@ export function ProjectMetadataPanel({ project, onUpdateProject, onInviteTeam }:
     const [isEditing, setIsEditing] = useState(false);
 
     // Local state for form
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<ProjectUpdateInput>({
         name: project?.name || '',
         productionCo: project?.productionCo || '',
         producer: project?.producer || '',
@@ -19,8 +32,8 @@ export function ProjectMetadataPanel({ project, onUpdateProject, onInviteTeam }:
         cinematographer: project?.cinematographer || '',
         assistantCamera: project?.assistantCamera || '',
         rentalHouse: project?.rentalHouse || '',
-        testDates: (project as any)?.testDates || '',
-        shootDates: (project as any)?.shootDates || '',
+        testDates: project?.testDates || '',
+        shootDates: project?.shootDates || '',
         datesJson: project?.datesJson || '{}'
     });
 

@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { InventoryItem } from './CineBrainInterface';
-import { X, Check, Plus, AlertCircle, Link } from 'lucide-react';
+import { X, Check, Plus, Link } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SmartSuggestionModalProps {
@@ -18,6 +17,7 @@ export function SmartSuggestionModal({ isOpen, onClose, hostItem, suggestions, o
     // Pre-select all by default? Or none? Let's pre-select all for convenience.
     useEffect(() => {
         if (isOpen && suggestions.length > 0) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- reset default picks when modal opens with a new suggestion list
             setSelectedIds(new Set(suggestions.map(s => s.id)));
         }
     }, [isOpen, suggestions]);

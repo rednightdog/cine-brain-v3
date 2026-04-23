@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { InventoryItem } from '../CineBrainInterface';
 import { cn } from '@/lib/utils';
-import { Check, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 interface LensGroupCardProps {
     groupName: string;
@@ -20,8 +20,8 @@ export function LensGroupCard({ groupName, brand, items, onAddItems, customSecon
             const match = str.match(/(\d+\.?\d*)/);
             return match ? parseFloat(match[1]) : 0;
         };
-        const flA = (a as any).focal_length ? getNum((a as any).focal_length) : getNum(a.name);
-        const flB = (b as any).focal_length ? getNum((b as any).focal_length) : getNum(b.name);
+        const flA = a.focal_length ? getNum(a.focal_length) : getNum(a.name);
+        const flB = b.focal_length ? getNum(b.focal_length) : getNum(b.name);
         return flA - flB;
     });
 
@@ -45,7 +45,7 @@ export function LensGroupCard({ groupName, brand, items, onAddItems, customSecon
         if (item.category === 'LNS') {
             const match = item.name.match(/(\d+)\s*mm/i);
             if (match) return match[1];
-            return (item as any).focal_length?.replace('mm', '') || item.name;
+            return item.focal_length?.replace('mm', '') || item.name;
         }
         // Filters
         if (item.subcategory === 'Filters') {

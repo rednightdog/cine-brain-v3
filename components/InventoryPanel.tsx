@@ -15,6 +15,8 @@ import { getProTips } from '@/lib/pro-tips';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { SmartSuggestionModal } from './SmartSuggestionModal';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
     CAM: ['Generic', 'Bodies', 'Monitor', 'Media', 'Power', 'Support', 'GoPro', 'Drone', 'Specialty'],
     LNS: ['Generic', 'Prime', 'Zoom', 'Anamorphic', 'Vintage', 'Macro', 'Filter', 'Adapter'],
@@ -1145,7 +1147,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                             <ShieldCheck className="w-4 h-4 text-blue-600" />
                                         </div>
                                         <div className="flex-1">
-                                            <div className="font-bold text-xs text-blue-900">"{searchQuery}" Not in Catalog?</div>
+                                            <div className="font-bold text-xs text-blue-900">&quot;{searchQuery}&quot; Not in Catalog?</div>
                                             <div className="text-[9px] text-blue-500/80 font-medium">Use AI to find and add it</div>
                                         </div>
                                         {isResearching ? (

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { cn } from "@/lib/utils";
-import { Trash2, Edit, Save, LogOut, User as UserIcon, Users } from "lucide-react";
+import { useState, type MouseEvent } from "react";
+import { Trash2, Edit, LogOut, User as UserIcon, Users } from "lucide-react";
 import { signOut } from "next-auth/react";
+import type { Session } from "next-auth";
 import Link from "next/link";
+import type { ProjectWithItems } from "./CineBrainInterface";
 
 // Types for the form
 type ProjectForm = {
@@ -52,6 +53,55 @@ const INITIAL_FORM: ProjectForm = {
     rentalEmail: ""
 };
 
+type ProjectContacts = {
+    producer?: { phone?: string; email?: string };
+    dp?: { phone?: string; email?: string };
+    rental?: { name?: string; phone?: string; email?: string };
+};
+
+type ProjectDates = {
+    shoot?: { start?: string; end?: string };
+    test?: { start?: string; end?: string };
+};
+
+type ProjectMutationInput = {
+    name: string;
+    productionCo: string;
+    producer: string;
+    director: string;
+    cinematographer: string;
+    assistantCamera: string;
+    rentalHouse: string;
+    contactsJson: string;
+    datesJson: string;
+};
+
+type ProjectSummary = Omit<ProjectWithItems, "items"> & {
+    updatedAt: Date | string;
+};
+
+type ProjectDashboardProps = {
+    projects: ProjectSummary[];
+    onSelectProject: (id: string) => void;
+    onCreateProject: (data: ProjectMutationInput) => void;
+    onUpdateProject: (id: string, data: ProjectMutationInput) => void;
+    onDeleteProject: (id: string) => void;
+    session: Session | null;
+};
+
+function parseJsonObject<T extends object>(jsonValue?: string | null): T {
+    if (!jsonValue) return {} as T;
+    try {
+        const parsed = JSON.parse(jsonValue) as unknown;
+        if (parsed && typeof parsed === "object") {
+            return parsed as T;
+        }
+    } catch {
+        // Ignore malformed JSON and fallback to empty object.
+    }
+    return {} as T;
+}
+
 export default function ProjectDashboard({
     projects,
     onSelectProject,
@@ -59,14 +109,7 @@ export default function ProjectDashboard({
     onUpdateProject,
     onDeleteProject,
     session
-}: {
-    projects: any[],
-    onSelectProject: (id: string) => void,
-    onCreateProject: (data: any) => void,
-    onUpdateProject: (id: string, data: any) => void,
-    onDeleteProject: (id: string) => void,
-    session: any
-}) {
+}: ProjectDashboardProps) {
     const [view, setView] = useState<'LIST' | 'CREATE'>('LIST');
     const [formData, setFormData] = useState<ProjectForm>(INITIAL_FORM);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -75,11 +118,11 @@ export default function ProjectDashboard({
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleEdit = (p: any, e: any) => {
+    const handleEdit = (p: ProjectSummary, e: MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
         // Parse JSONs
-        const contacts = p.contactsJson ? JSON.parse(p.contactsJson) : {};
-        const dates = p.datesJson ? JSON.parse(p.datesJson) : {};
+        const contacts = parseJsonObject<ProjectContacts>(p.contactsJson);
+        const dates = parseJsonObject<ProjectDates>(p.datesJson);
 
         setFormData({
             name: p.name,
@@ -107,7 +150,7 @@ export default function ProjectDashboard({
         setView('CREATE');
     };
 
-    const handleDelete = (id: string, e: any) => {
+    const handleDelete = (id: string, e: MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
         if (confirm("Are you sure you want to delete this project? This action cannot be undone.")) {
             onDeleteProject(id);
