@@ -1,8 +1,9 @@
 import React from 'react';
 import { AlertTriangle, Plug, Crop, Link } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { Adapter } from '@/lib/adapters';
 
-export type WarningType = 'MOUNT' | 'SENSOR' | 'WEIGHT' | 'MEDIA' | 'POWER' | 'GENERAL' | 'DEPENDENCY';
+export type WarningType = 'MOUNT' | 'SENSOR' | 'WEIGHT' | 'MEDIA' | 'POWER' | 'GENERAL' | 'DEPENDENCY' | 'TRIPOD' | 'ROD';
 
 interface WarningBadgeProps {
     type: WarningType;
@@ -60,6 +61,20 @@ export function WarningBadge({ type, message, compact = false }: WarningBadgePro
             bgColor: 'bg-orange-50',
             borderColor: 'border-orange-200',
             label: 'Required'
+        },
+        TRIPOD: {
+            icon: AlertTriangle,
+            color: 'text-red-600',
+            bgColor: 'bg-red-50',
+            borderColor: 'border-red-200',
+            label: 'Tripod'
+        },
+        ROD: {
+            icon: AlertTriangle,
+            color: 'text-red-600',
+            bgColor: 'bg-red-50',
+            borderColor: 'border-red-200',
+            label: 'Rod'
         }
     };
 
@@ -102,7 +117,7 @@ export function WarningBadge({ type, message, compact = false }: WarningBadgePro
 
 // Tooltip wrapper for inline badges
 interface WarningTooltipProps {
-    warnings: { type: WarningType; message: string; suggestedAdapters?: any[] }[];
+    warnings: { type: WarningType; message: string; suggestedAdapters?: Adapter[] }[];
     children: React.ReactNode;
 }
 
@@ -120,7 +135,7 @@ export function WarningTooltip({ warnings, children }: WarningTooltipProps) {
             // But ensure it fits on screen
             const scrollTop = window.scrollY || document.documentElement.scrollTop;
 
-            let top = rect.bottom + scrollTop + 4; // 4px gap
+            const top = rect.bottom + scrollTop + 4; // 4px gap
             let left = rect.left;
 
             // Simple boundary check (assuming viewport width)
