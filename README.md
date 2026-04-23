@@ -51,6 +51,6 @@ GitHub Actions CI is configured at:
 `/.github/workflows/ci.yml`
 
 It runs:
-1. `npm run lint`
+1. `npx eslint` on changed lintable source files in the PR/commit
 2. `npm test`
 3. `npm run build`
