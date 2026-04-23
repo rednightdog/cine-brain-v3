@@ -1,4 +1,4 @@
-import { InventoryEntry, InventoryItem } from "@/components/CineBrainInterface";
+import type { InventoryEntry, InventoryItem } from "@/components/CineBrainInterface";
 import { validateHardwareCompatibility, validateDependencies } from "./hardware-validator";
 import { findCompatibleAdapters, Adapter } from "./adapters";
 
@@ -6,9 +6,19 @@ export interface CompatibilityWarning {
     itemId?: string;
     message: string;
     solution?: string; // Actionable advice/solution
-    type: 'MOUNT' | 'SENSOR' | 'WEIGHT' | 'MEDIA' | 'POWER' | 'GENERAL' | 'DEPENDENCY';
+    type: 'MOUNT' | 'SENSOR' | 'WEIGHT' | 'MEDIA' | 'POWER' | 'GENERAL' | 'DEPENDENCY' | 'TRIPOD' | 'ROD';
     severity?: 'ERROR' | 'WARNING';
     suggestedAdapters?: Adapter[];
+}
+
+function safeParseSpecs(specsJson: string | null | undefined): Record<string, unknown> {
+    if (!specsJson) return {};
+    try {
+        const parsed: unknown = JSON.parse(specsJson);
+        return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    } catch {
+        return {};
+    }
 }
 
 /**
@@ -114,13 +124,13 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
                     brand: hostItem.brand || '',
                     model: hostItem.model || '',
                     category: hostItem.category,
-                    specs: hostItem.specs_json ? JSON.parse(hostItem.specs_json) : {}
+                    specs: safeParseSpecs(hostItem.specs_json)
                 },
                 {
                     brand: item.brand || '',
                     model: item.model || '',
                     category: item.category,
-                    specs: item.specs_json ? JSON.parse(item.specs_json) : {}
+                    specs: safeParseSpecs(item.specs_json)
                 }
             );
 

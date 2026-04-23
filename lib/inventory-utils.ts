@@ -1,15 +1,30 @@
-import { InventoryItem } from "@/components/CineBrainInterface";
+import type { InventoryItem } from "@/components/CineBrainInterface";
 
 export const CATEGORIES = [
     { id: "CAM", name: "CAMERA" },
     { id: "LNS", name: "LENS" },
     { id: "FLT", name: "FILTER" },
+    { id: "MON", name: "MONITOR" },
     { id: "SUP", name: "SUPPORT" },
     { id: "GRP", name: "GRIP" },
     { id: "LIT", name: "LIGHT" },
+    { id: "POW", name: "POWER" },
     { id: "DIT", name: "DIT & MEDIA" },
     { id: "COM", name: "COMMS" },
 ];
+
+export const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
+    CAM: ["Bodies", "Drone", "Action", "Specialty", "Monitor", "Media", "Power", "Support", "Generic"],
+    LNS: ["Prime", "Zoom", "Anamorphic", "Vintage", "Macro", "Filter", "Adapter", "Generic"],
+    FLT: ["ND", "IRND", "Polarizer", "Diffusion", "UV", "Clear", "Generic"],
+    MON: ["Production Monitor", "On-Camera Monitor", "EVF", "Recorder", "Stand", "Wireless", "Generic"],
+    SUP: ["Tripod Legs", "Fluid Head", "Stabilizer", "Grip (Support)", "Matte Box", "Follow Focus", "Wireless Video", "Audio", "Rigging", "Generic"],
+    GRP: ["Rigging", "Clamp", "Arm", "Stand", "Accessory", "Generic"],
+    LIT: ["LED", "Daylight", "Tungsten", "HMI", "Tube", "Panel", "Modifier", "Stand", "Grip", "Control", "Generic"],
+    POW: ["Block Battery", "On-Board Battery", "Power Cables", "Charger", "Distribution", "Generic"],
+    DIT: ["Card", "Reader", "Drive", "Ingest", "Monitoring", "Generic"],
+    COM: ["Wireless", "Wired", "Intercom", "Accessory", "Generic"],
+};
 
 export const isCameraBody = (item: InventoryItem | undefined) => {
     if (!item || item.category !== "CAM") return false;
