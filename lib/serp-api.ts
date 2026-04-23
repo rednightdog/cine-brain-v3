@@ -1,9 +1,6 @@
 
 import { GoogleSearch } from "google-search-results-nodejs";
 
-const API_KEY = process.env.SERPAPI_KEY || "41f7c77f655c9b4149a5c00d5c44b9693055c7c7be26d3b05bac42315c34ff53";
-const search = new GoogleSearch(API_KEY);
-
 export interface SerpApiResult {
     knowledge_graph?: Record<string, unknown>;
     organic_results?: Record<string, unknown>[];
@@ -11,6 +8,12 @@ export interface SerpApiResult {
 }
 
 export async function searchTechnicalSpecs(query: string): Promise<SerpApiResult> {
+    const apiKey = process.env.SERPAPI_KEY;
+    if (!apiKey) {
+        return { error: "SERPAPI_KEY is not configured" };
+    }
+
+    const search = new GoogleSearch(apiKey);
     const params = {
         engine: "google",
         q: query,
