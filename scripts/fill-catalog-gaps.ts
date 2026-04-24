@@ -2,6 +2,27 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Manual overrides for models that do not expose watt values in current specs_json payloads.
+// Sources used while preparing this mapping:
+// - Aputure/Infinibar and MT Pro technical/power docs
+// - amaran T2c/T4c manual/spec pages
+// - Nanlite PavoTube II manual technical data
+// - Kino Flo FreeStyle T44/T24 system controller specification
+const POWER_OVERRIDES_BY_MODEL: Record<string, number> = {
+    "Amaran T2c": 25,
+    "Amaran T4c": 50,
+    "MT Pro": 9,
+    "Infinibar PB3": 9,
+    "Infinibar PB6": 18,
+    "Infinibar PB12": 37,
+    "PavoTube II 15X": 35,
+    "PavoTube II 30C": 30,
+    "PavoTube II 30X": 70,
+    "PavoTube II 60X": 106,
+    "FreeStyle T24": 150,
+    "FreeStyle T44": 150,
+};
+
 function normalizeCoverage(value: string): string {
     const text = value.trim().toUpperCase();
     if (text.includes("SUPER") || text.includes("S35")) return "S35";
@@ -114,22 +135,39 @@ async function fillLightingPower() {
         },
         select: {
             id: true,
+            model: true,
             specs_json: true,
         },
     });
 
-    let updated = 0;
+    let updatedFromSpecs = 0;
+    let updatedFromOverrides = 0;
     for (const item of lighting) {
         const watts = extractPowerDrawWatts(item.specs_json);
-        if (watts == null) continue;
+        if (watts != null) {
+            await prisma.equipmentItem.update({
+                where: { id: item.id },
+                data: { power_draw_w: watts },
+            });
+            updatedFromSpecs += 1;
+            continue;
+        }
+
+        const override = POWER_OVERRIDES_BY_MODEL[item.model];
+        if (override == null) continue;
         await prisma.equipmentItem.update({
             where: { id: item.id },
-            data: { power_draw_w: watts },
+            data: { power_draw_w: override },
         });
-        updated += 1;
+        updatedFromOverrides += 1;
     }
 
-    return { scanned: lighting.length, updated };
+    return {
+        scanned: lighting.length,
+        updatedFromSpecs,
+        updatedFromOverrides,
+        updated: updatedFromSpecs + updatedFromOverrides,
+    };
 }
 
 async function main() {
@@ -141,7 +179,10 @@ async function main() {
         `LNS coverage: updated ${lensResult.updated}/${lensResult.scanned} records from sensor_coverage`
     );
     console.log(
-        `LIT power_draw_w: updated ${lightResult.updated}/${lightResult.scanned} records from specs_json`
+        `LIT power_draw_w: updated ${lightResult.updated}/${lightResult.scanned} records`
+    );
+    console.log(
+        `LIT power_draw_w breakdown: specs_json=${lightResult.updatedFromSpecs}, overrides=${lightResult.updatedFromOverrides}`
     );
 }
 
@@ -153,4 +194,3 @@ main()
     .finally(async () => {
         await prisma.$disconnect();
     });
-
