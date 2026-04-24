@@ -79,7 +79,23 @@ Prisma Studio'da `EquipmentItem` tablosunda kayıtları ve alanları kontrol et:
 npm ci && npm run db:generate && npm run db:push && npm run db:seed:catalog
 ```
 
-## 6) Supabase için not
+## 6) Kamera/Lens kalite otomasyonu
+
+Kamera ve lens bilgilerini otomatik iyileştirme + kontrat doğrulama:
+
+```bash
+npm run db:pipeline:quality
+```
+
+Bu pipeline:
+- `db:fill:gaps`: coverage, lens_type, technicalData ve power_draw gibi doldurulabilir boşlukları tamamlar.
+- `db:validate:contract:cam-lens`: kamera/lens için kritik alan kontratını denetler.
+
+Detay rapor:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/catalog-contract-report.json`
+
+## 7) Supabase için not
 
 Supabase kullanırken bağlantıyı panelden taze kopyala:
 

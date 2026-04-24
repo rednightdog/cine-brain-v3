@@ -17,7 +17,10 @@
     "db:seed:catalog": "tsx prisma/seed-catalog.ts",
     "db:studio": "prisma studio",
     "db:health:catalog": "tsx scripts/catalog-health-report.ts",
-    "db:fill:gaps": "tsx scripts/fill-catalog-gaps.ts"
+    "db:fill:gaps": "tsx scripts/fill-catalog-gaps.ts",
+    "db:validate:contract": "tsx scripts/validate-catalog-contract.ts",
+    "db:validate:contract:cam-lens": "tsx scripts/validate-catalog-contract.ts --cam-lens-only",
+    "db:pipeline:quality": "npm run db:fill:gaps && npm run db:validate:contract:cam-lens"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
