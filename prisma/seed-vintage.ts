@@ -197,10 +197,16 @@ export async function seedVintageLenses() {
     console.log('Seeding Vintage Lenses...');
 
     for (const lens of vintageLensData) {
-        const { technicalData, ...baseData } = lens;
+        const { technicalData, id: _seedId, ...baseData } = lens;
 
         await prisma.equipmentItem.upsert({
-            where: { id: lens.id },
+            where: {
+                brand_model_name: {
+                    brand: lens.brand,
+                    model: lens.model,
+                    name: lens.name
+                }
+            },
             update: {
                 ...baseData,
                 category: 'LNS',

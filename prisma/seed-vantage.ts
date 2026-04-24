@@ -704,11 +704,17 @@ export async function seedVantageLenses() {
     console.log('Seeding Vantage (Hawk) lenses...');
 
     for (const lens of vantageLensData) {
-        const { technicalData, ...baseData } = lens;
+        const { technicalData, id: _seedId, ...baseData } = lens;
 
         try {
             await prisma.equipmentItem.upsert({
-                where: { id: lens.id },
+                where: {
+                    brand_model_name: {
+                        brand: lens.brand,
+                        model: lens.model,
+                        name: lens.name
+                    }
+                },
                 update: {
                     ...baseData,
                     category: 'LNS',

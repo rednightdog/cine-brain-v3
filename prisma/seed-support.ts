@@ -364,13 +364,19 @@ export async function seedSupportItems() {
 
     for (const item of supportItems) {
         // Extract specs and image_url to flatten/map them
-        const { specs, image_url, ...baseItem } = item;
+        const { specs, image_url, id: _seedId, ...baseItem } = item;
 
         // Prepare specs_json for any extra fields not covered by columns
         const specsJson = JSON.stringify(specs);
 
         await prisma.equipmentItem.upsert({
-            where: { id: item.id },
+            where: {
+                brand_model_name: {
+                    brand: item.brand,
+                    model: item.model,
+                    name: item.name
+                }
+            },
             update: {
                 ...baseItem,
                 category: item.category === 'Filter' ? 'SUP' : item.category === 'Monitor' ? 'SUP' : 'SUP',

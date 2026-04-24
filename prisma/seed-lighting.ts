@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+const LIGHTING_BATCH_SIZE = 20;
 
 const lightingData = [
     // ==========================================
@@ -2031,9 +2032,9 @@ const lightingData = [
 export async function seedLighting() {
     console.log('Seeding Comprehensive ARRI Lighting data...');
 
-    for (const item of lightingData) {
+    const upsertOne = async (item: any) => {
         // manually map fields and cast to any to allow flexible spec injection
-        const { specs, image_url, ...rest } = item as any;
+        const { specs, image_url, id: _seedId, ...rest } = item as any;
 
         const dataToSave = {
             ...rest,
@@ -2043,10 +2044,26 @@ export async function seedLighting() {
         };
 
         await prisma.equipmentItem.upsert({
-            where: { id: item.id },
+            where: {
+                brand_model_name: {
+                    brand: item.brand,
+                    model: item.model,
+                    name: item.name
+                }
+            },
             update: dataToSave,
             create: dataToSave
         });
+    };
+
+    let processed = 0;
+    for (let i = 0; i < lightingData.length; i += LIGHTING_BATCH_SIZE) {
+        const batch = lightingData.slice(i, i + LIGHTING_BATCH_SIZE);
+        await Promise.all(batch.map((item) => upsertOne(item)));
+        processed += batch.length;
+        if (processed % 200 === 0 || processed === lightingData.length) {
+            console.log(`Lighting progress: ${processed}/${lightingData.length}`);
+        }
     }
     console.log(`Lighting seeded: ${lightingData.length} items`);
 }

@@ -7,6 +7,7 @@ Bu rehber, "onca envanteri tüm özellikleriyle" veritabanına güvenli şekilde
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/.env` dosyasında en az şu alanlar olmalı:
 
 - `DATABASE_URL`
+- `DIRECT_URL` (opsiyonel ama önerilir)
 - `AUTH_SECRET`
 - `AUTH_GOOGLE_ID`
 - `AUTH_GOOGLE_SECRET`
@@ -80,6 +81,33 @@ npm ci && npm run db:generate && npm run db:push && npm run db:seed:catalog
 
 ## 6) Supabase için not
 
-`DATABASE_URL` olarak Supabase PostgreSQL connection string kullan.
-`sslmode=require` olduğundan emin ol.
+Supabase kullanırken bağlantıyı panelden taze kopyala:
 
+1. Supabase Dashboard -> Project Settings -> Database -> Connect -> Prisma
+2. `DATABASE_URL` alanına panelde verilen PostgreSQL URL'i yapıştır
+3. URL sonunda `sslmode=require` olduğundan emin ol
+
+Örnek (şablon):
+
+```bash
+DATABASE_URL="postgresql://postgres:<PASSWORD>@<HOST>:5432/postgres?sslmode=require"
+DIRECT_URL="postgresql://postgres:<PASSWORD>@<HOST>:5432/postgres?sslmode=require"
+```
+
+### Bağlantı hatası hızlı teşhis
+
+Eğer şu hata gelirse:
+
+`Can't reach database server at ...`
+
+- Host adı yanlış/eski olabilir (en sık neden)
+- Proje pause durumda olabilir
+- Ağ veya DNS problemi olabilir
+
+Host çözümlemesini test et:
+
+```bash
+nslookup <HOST>
+```
+
+Çözümlemezse Supabase panelinden yeni URL alıp `.env` dosyasını güncelle.

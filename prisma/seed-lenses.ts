@@ -61,10 +61,16 @@ export async function seedLenses() {
     console.log('Seeding detailed lens data...');
 
     for (const lens of lensData) {
-        const { technicalData, ...baseData } = lens;
+        const { technicalData, id: _seedId, ...baseData } = lens;
 
         await prisma.equipmentItem.upsert({
-            where: { id: lens.id },
+            where: {
+                brand_model_name: {
+                    brand: lens.brand,
+                    model: lens.model,
+                    name: lens.name
+                }
+            },
             update: {
                 ...baseData,
                 category: 'LNS',

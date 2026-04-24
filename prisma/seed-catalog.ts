@@ -7,6 +7,7 @@ import { seedLighting } from "./seed-lighting";
 import { seedVintageLenses } from "./seed-vintage";
 
 const prisma = new PrismaClient();
+const UPSERT_BATCH_SIZE = 10;
 
 function mapCategory(category: string): string {
     const c = category.toLowerCase();
@@ -25,8 +26,13 @@ function mapSubcategory(category: string, subcategory?: string): string | undefi
 
 async function upsertBaseCatalog() {
     let processed = 0;
+    const dedupedCatalog = Array.from(
+        new Map(
+            equipmentData.map((item) => [`${item.brand}|||${item.model}|||${item.name}`, item])
+        ).values()
+    );
 
-    for (const item of equipmentData) {
+    const upsertOne = async (item: (typeof dedupedCatalog)[number]) => {
         const specs = item.specs;
         const data = {
             id: item.id,
@@ -59,14 +65,29 @@ async function upsertBaseCatalog() {
         };
 
         await prisma.equipmentItem.upsert({
-            where: { id: item.id },
+            where: {
+                brand_model_name: {
+                    brand: item.brand,
+                    model: item.model,
+                    name: item.name
+                }
+            },
             update: data,
             create: data,
         });
+    };
 
-        processed += 1;
-        if (processed % 200 === 0) {
-            console.log(`Base catalog progress: ${processed}/${equipmentData.length}`);
+    if (dedupedCatalog.length !== equipmentData.length) {
+        console.log(`Deduped base catalog by brand/model/name: ${equipmentData.length} -> ${dedupedCatalog.length}`);
+    }
+
+    for (let i = 0; i < dedupedCatalog.length; i += UPSERT_BATCH_SIZE) {
+        const batch = dedupedCatalog.slice(i, i + UPSERT_BATCH_SIZE);
+        await Promise.all(batch.map((item) => upsertOne(item)));
+
+        processed += batch.length;
+        if (processed % 200 === 0 || processed === dedupedCatalog.length) {
+            console.log(`Base catalog progress: ${processed}/${dedupedCatalog.length}`);
         }
     }
 
