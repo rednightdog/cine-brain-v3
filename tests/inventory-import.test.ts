@@ -50,7 +50,9 @@ describe("parseImportRow", () => {
         expect(parsed.item?.data.recordingFormats).toBeTruthy();
         expect(parsed.item?.data.technicalData).toBeTruthy();
         expect(parsed.item?.data.labMetrics).toBeTruthy();
-        expect(parsed.issues.some((x) => x.field === "recordingFormats" && x.level === "warning")).toBe(true);
+        expect(parsed.issues.some((x) => x.field === "recordingFormats" && x.level === "warning")).toBe(false);
+        expect(parsed.issues.some((x) => x.field === "technicalData" && x.level === "warning")).toBe(true);
+        expect(parsed.issues.some((x) => x.field === "labMetrics" && x.level === "warning")).toBe(true);
     });
 
     it("returns error when required fields are missing", () => {

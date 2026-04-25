@@ -428,7 +428,7 @@ function coerceJsonField(field: "recordingFormats" | "technicalData" | "labMetri
         if (formats.length === 0) return { value: null, warning: null };
         return {
             value: JSON.stringify(formats),
-            warning: "recordingFormats duz metinden otomatik JSON formata cevrildi.",
+            warning: null,
         };
     }
 
