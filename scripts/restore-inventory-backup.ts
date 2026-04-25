@@ -8,9 +8,17 @@ type CliOptions = {
     skipQuality: boolean;
     onlyCamLens: boolean;
     status: "PENDING" | "APPROVED" | null;
+    maxTotalChanges: number | null;
+    maxInserts: number | null;
+    maxUpdates: number | null;
+    maxChangeRatio: number | null;
+    force: boolean;
 };
 
 type ImportReport = {
+    totals?: {
+        importedRows?: number;
+    };
     issues?: {
         errors?: number;
         warnings?: number;
@@ -22,6 +30,12 @@ type ImportReport = {
     };
 };
 
+type GuardSnapshot = {
+    importedRows: number;
+    inserts: number;
+    updates: number;
+};
+
 function parseCliOptions(): CliOptions {
     const args = process.argv.slice(2);
     const options: CliOptions = {
@@ -30,6 +44,11 @@ function parseCliOptions(): CliOptions {
         skipQuality: false,
         onlyCamLens: false,
         status: null,
+        maxTotalChanges: null,
+        maxInserts: null,
+        maxUpdates: null,
+        maxChangeRatio: null,
+        force: false,
     };
 
     for (let i = 0; i < args.length; i += 1) {
@@ -40,6 +59,10 @@ function parseCliOptions(): CliOptions {
         }
         if (arg === "--skip-quality") {
             options.skipQuality = true;
+            continue;
+        }
+        if (arg === "--force") {
+            options.force = true;
             continue;
         }
         if (arg === "--only-cam-lens") {
@@ -67,6 +90,50 @@ function parseCliOptions(): CliOptions {
             if (raw === "PENDING" || raw === "APPROVED") {
                 options.status = raw;
             }
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--max-total-changes=")) {
+            const value = Number(arg.slice("--max-total-changes=".length).trim());
+            if (Number.isFinite(value) && value >= 0) options.maxTotalChanges = Math.round(value);
+            continue;
+        }
+        if (arg === "--max-total-changes") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) options.maxTotalChanges = Math.round(value);
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--max-inserts=")) {
+            const value = Number(arg.slice("--max-inserts=".length).trim());
+            if (Number.isFinite(value) && value >= 0) options.maxInserts = Math.round(value);
+            continue;
+        }
+        if (arg === "--max-inserts") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) options.maxInserts = Math.round(value);
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--max-updates=")) {
+            const value = Number(arg.slice("--max-updates=".length).trim());
+            if (Number.isFinite(value) && value >= 0) options.maxUpdates = Math.round(value);
+            continue;
+        }
+        if (arg === "--max-updates") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) options.maxUpdates = Math.round(value);
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--max-change-ratio=")) {
+            const value = Number(arg.slice("--max-change-ratio=".length).trim());
+            if (Number.isFinite(value) && value >= 0) options.maxChangeRatio = value;
+            continue;
+        }
+        if (arg === "--max-change-ratio") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) options.maxChangeRatio = value;
             i += 1;
             continue;
         }
@@ -109,6 +176,41 @@ function findLatestBackup(backupsDir: string): string | null {
     return files[0].path;
 }
 
+function enforceGuards(snapshot: GuardSnapshot, options: CliOptions) {
+    if (options.force) return;
+
+    const totalChanges = snapshot.inserts + snapshot.updates;
+
+    if (options.maxTotalChanges != null && totalChanges > options.maxTotalChanges) {
+        throw new Error(
+            `Guard blocked: total changes ${totalChanges} > max-total-changes ${options.maxTotalChanges}. ` +
+                "Backup dosyasini kontrol et veya bilerek devam edeceksen --force kullan."
+        );
+    }
+    if (options.maxInserts != null && snapshot.inserts > options.maxInserts) {
+        throw new Error(
+            `Guard blocked: inserts ${snapshot.inserts} > max-inserts ${options.maxInserts}. ` +
+                "Backup dosyasini kontrol et veya bilerek devam edeceksen --force kullan."
+        );
+    }
+    if (options.maxUpdates != null && snapshot.updates > options.maxUpdates) {
+        throw new Error(
+            `Guard blocked: updates ${snapshot.updates} > max-updates ${options.maxUpdates}. ` +
+                "Backup dosyasini kontrol et veya bilerek devam edeceksen --force kullan."
+        );
+    }
+
+    if (options.maxChangeRatio != null && snapshot.importedRows > 0) {
+        const ratio = totalChanges / snapshot.importedRows;
+        if (ratio > options.maxChangeRatio) {
+            throw new Error(
+                `Guard blocked: change ratio ${ratio.toFixed(4)} > max-change-ratio ${options.maxChangeRatio}. ` +
+                    "Backup dosyasini kontrol et veya bilerek devam edeceksen --force kullan."
+            );
+        }
+    }
+}
+
 async function run() {
     const options = parseCliOptions();
     const backupsDir = resolve(process.cwd(), "./imports/backups");
@@ -134,6 +236,7 @@ async function run() {
     const report = readImportReport(reportPath);
     const errors = report.issues?.errors || 0;
     const warnings = report.issues?.warnings || 0;
+    const importedRows = report.totals?.importedRows || 0;
     const inserts = report.preview?.inserts || 0;
     const updates = report.preview?.updates || 0;
     const unchanged = report.preview?.unchanged || 0;
@@ -143,6 +246,15 @@ async function run() {
     }
 
     console.log(`Dry-run preview: ${inserts} inserts, ${updates} updates, ${unchanged} unchanged`);
+    enforceGuards({ importedRows, inserts, updates }, options);
+    if (
+        options.maxTotalChanges != null ||
+        options.maxInserts != null ||
+        options.maxUpdates != null ||
+        options.maxChangeRatio != null
+    ) {
+        console.log("Dry-run guard checks passed.");
+    }
 
     if (options.dryRunOnly) {
         console.log("Dry-run-only restore complete.");

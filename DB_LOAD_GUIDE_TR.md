@@ -152,12 +152,31 @@ npm run db:sync:inventory:dry
 
 Not: sync dry-run adımında terminalde otomatik preview özeti yazılır (`insert/update/unchanged`).
 
+Guard (esik) ile dry-run:
+
+```bash
+npm run db:sync:inventory:safe:dry
+```
+
+Opsiyonel esik parametreleri:
+- `--max-total-changes <N>`
+- `--max-inserts <N>`
+- `--max-updates <N>`
+- `--max-change-ratio <0-1>`
+- `--force` (esik blokunu bilerek bypass eder)
+
 ### E) Backup'tan geri yükleme (rollback)
 
 En son backup dosyasını otomatik bulup restore dry-run:
 
 ```bash
 npm run db:restore:latest:dry
+```
+
+Guard'lı restore dry-run:
+
+```bash
+npm run db:restore:latest:safe:dry
 ```
 
 En son backup dosyasını gerçek restore:

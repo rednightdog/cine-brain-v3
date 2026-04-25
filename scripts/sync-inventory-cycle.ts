@@ -8,6 +8,11 @@ type CliOptions = {
     dryRunOnly: boolean;
     skipQuality: boolean;
     status: "PENDING" | "APPROVED" | null;
+    maxTotalChanges: number | null;
+    maxInserts: number | null;
+    maxUpdates: number | null;
+    maxChangeRatio: number | null;
+    force: boolean;
 };
 
 type ImportReport = {
@@ -29,6 +34,12 @@ type ImportReport = {
     };
 };
 
+type GuardSnapshot = {
+    importedRows: number;
+    inserts: number;
+    updates: number;
+};
+
 function parseCliOptions(): CliOptions {
     const args = process.argv.slice(2);
     let filePath = "./imports/my-inventory.csv";
@@ -36,6 +47,11 @@ function parseCliOptions(): CliOptions {
     let dryRunOnly = false;
     let skipQuality = false;
     let status: "PENDING" | "APPROVED" | null = null;
+    let maxTotalChanges: number | null = null;
+    let maxInserts: number | null = null;
+    let maxUpdates: number | null = null;
+    let maxChangeRatio: number | null = null;
+    let force = false;
 
     for (let i = 0; i < args.length; i += 1) {
         const arg = args[i];
@@ -49,6 +65,10 @@ function parseCliOptions(): CliOptions {
         }
         if (arg === "--skip-quality") {
             skipQuality = true;
+            continue;
+        }
+        if (arg === "--force") {
+            force = true;
             continue;
         }
         if (arg.startsWith("--file=")) {
@@ -75,6 +95,50 @@ function parseCliOptions(): CliOptions {
             i += 1;
             continue;
         }
+        if (arg.startsWith("--max-total-changes=")) {
+            const value = Number(arg.slice("--max-total-changes=".length).trim());
+            if (Number.isFinite(value) && value >= 0) maxTotalChanges = Math.round(value);
+            continue;
+        }
+        if (arg === "--max-total-changes") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) maxTotalChanges = Math.round(value);
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--max-inserts=")) {
+            const value = Number(arg.slice("--max-inserts=".length).trim());
+            if (Number.isFinite(value) && value >= 0) maxInserts = Math.round(value);
+            continue;
+        }
+        if (arg === "--max-inserts") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) maxInserts = Math.round(value);
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--max-updates=")) {
+            const value = Number(arg.slice("--max-updates=".length).trim());
+            if (Number.isFinite(value) && value >= 0) maxUpdates = Math.round(value);
+            continue;
+        }
+        if (arg === "--max-updates") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) maxUpdates = Math.round(value);
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--max-change-ratio=")) {
+            const value = Number(arg.slice("--max-change-ratio=".length).trim());
+            if (Number.isFinite(value) && value >= 0) maxChangeRatio = value;
+            continue;
+        }
+        if (arg === "--max-change-ratio") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) maxChangeRatio = value;
+            i += 1;
+            continue;
+        }
     }
 
     return {
@@ -83,6 +147,11 @@ function parseCliOptions(): CliOptions {
         dryRunOnly,
         skipQuality,
         status,
+        maxTotalChanges,
+        maxInserts,
+        maxUpdates,
+        maxChangeRatio,
+        force,
     };
 }
 
@@ -109,6 +178,41 @@ function readImportReport(reportPath: string): ImportReport {
         return JSON.parse(readFileSync(reportPath, "utf8")) as ImportReport;
     } catch {
         return {};
+    }
+}
+
+function enforceGuards(snapshot: GuardSnapshot, options: CliOptions) {
+    if (options.force) return;
+
+    const totalChanges = snapshot.inserts + snapshot.updates;
+
+    if (options.maxTotalChanges != null && totalChanges > options.maxTotalChanges) {
+        throw new Error(
+            `Guard blocked: total changes ${totalChanges} > max-total-changes ${options.maxTotalChanges}. ` +
+                "CSV'yi kontrol et veya bilerek devam edeceksen --force kullan."
+        );
+    }
+    if (options.maxInserts != null && snapshot.inserts > options.maxInserts) {
+        throw new Error(
+            `Guard blocked: inserts ${snapshot.inserts} > max-inserts ${options.maxInserts}. ` +
+                "CSV'yi kontrol et veya bilerek devam edeceksen --force kullan."
+        );
+    }
+    if (options.maxUpdates != null && snapshot.updates > options.maxUpdates) {
+        throw new Error(
+            `Guard blocked: updates ${snapshot.updates} > max-updates ${options.maxUpdates}. ` +
+                "CSV'yi kontrol et veya bilerek devam edeceksen --force kullan."
+        );
+    }
+
+    if (options.maxChangeRatio != null && snapshot.importedRows > 0) {
+        const ratio = totalChanges / snapshot.importedRows;
+        if (ratio > options.maxChangeRatio) {
+            throw new Error(
+                `Guard blocked: change ratio ${ratio.toFixed(4)} > max-change-ratio ${options.maxChangeRatio}. ` +
+                    "CSV'yi kontrol et veya bilerek devam edeceksen --force kullan."
+            );
+        }
     }
 }
 
@@ -145,6 +249,7 @@ async function run() {
     const report = readImportReport(reportPath);
     const errors = report.issues?.errors || 0;
     const warnings = report.issues?.warnings || 0;
+    const importedRows = report.totals?.importedRows || 0;
     const inserts = report.preview?.inserts || 0;
     const updates = report.preview?.updates || 0;
     const unchanged = report.preview?.unchanged || 0;
@@ -153,6 +258,15 @@ async function run() {
     }
 
     console.log(`Dry-run preview: ${inserts} inserts, ${updates} updates, ${unchanged} unchanged`);
+    enforceGuards({ importedRows, inserts, updates }, options);
+    if (
+        options.maxTotalChanges != null ||
+        options.maxInserts != null ||
+        options.maxUpdates != null ||
+        options.maxChangeRatio != null
+    ) {
+        console.log("Dry-run guard checks passed.");
+    }
 
     if (options.dryRunOnly) {
         console.log("Dry-run-only mode complete.");
