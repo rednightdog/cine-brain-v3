@@ -43,5 +43,6 @@ next-env.d.ts
 
 /app/generated/prisma
 /reports/*.json
+/reports/*.csv
 /imports/my-inventory*.csv
 /imports/backups/*.csv

@@ -28,6 +28,21 @@ type ExistingItem = {
     name: string;
 } & Record<string, unknown>;
 
+function toCsvCell(value: unknown): string {
+    if (value == null) return "";
+    const text = String(value).replace(/\r?\n/g, " ").trim();
+    const escaped = text.replace(/"/g, "\"\"");
+    return `"${escaped}"`;
+}
+
+function stringifyCsv(headers: string[], rows: Record<string, unknown>[]): string {
+    const lines = [headers.map((header) => toCsvCell(header)).join(",")];
+    for (const row of rows) {
+        lines.push(headers.map((header) => toCsvCell(row[header])).join(","));
+    }
+    return lines.join("\n") + "\n";
+}
+
 function parseCliOptions(): CliOptions {
     const args = process.argv.slice(2);
     const options: CliOptions = {
@@ -313,6 +328,7 @@ async function run() {
     const reportsDir = join(process.cwd(), "reports");
     mkdirSync(reportsDir, { recursive: true });
     const reportPath = join(reportsDir, "inventory-import-report.json");
+    const previewCsvPath = join(reportsDir, "inventory-import-preview.csv");
 
     let upserted = 0;
     const actionableRows = preview.rows.filter((row) => row.operation !== "unchanged");
@@ -380,6 +396,18 @@ async function run() {
     };
     writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
+    const previewCsvHeaders = ["row", "operation", "brand", "model", "name", "changedFieldCount", "changedFields"];
+    const previewCsvRows = preview.rows.map((row) => ({
+        row: row.row,
+        operation: row.operation,
+        brand: row.key.brand,
+        model: row.key.model,
+        name: row.key.name,
+        changedFieldCount: row.changedFields.length,
+        changedFields: row.changedFields.join(" | "),
+    }));
+    writeFileSync(previewCsvPath, stringifyCsv(previewCsvHeaders, previewCsvRows));
+
     console.log("CSV import completed.");
     console.log(`Source file: ${absolutePath}`);
     console.log(`Rows in CSV: ${report.totals.csvRows}`);
@@ -390,6 +418,7 @@ async function run() {
     console.log(`Upserted rows: ${report.totals.upsertedRows}`);
     console.log(`Issues: ${report.issues.errors} errors, ${report.issues.warnings} warnings`);
     console.log(`Report path: ${reportPath}`);
+    console.log(`Preview CSV path: ${previewCsvPath}`);
 
     if (candidates.length === 0) {
         throw new Error("Import edilebilir satir yok. Raporu kontrol et.");

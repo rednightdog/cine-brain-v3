@@ -116,6 +116,10 @@ Import raporu:
 
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/inventory-import-report.json`
 
+Preview tablo raporu (CSV):
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/inventory-import-preview.csv`
+
 Raporda ayrıca şunlar görünür:
 - `preview.inserts`
 - `preview.updates`
