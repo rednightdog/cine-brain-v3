@@ -329,6 +329,7 @@ async function run() {
     mkdirSync(reportsDir, { recursive: true });
     const reportPath = join(reportsDir, "inventory-import-report.json");
     const previewCsvPath = join(reportsDir, "inventory-import-preview.csv");
+    const previewChangesCsvPath = join(reportsDir, "inventory-import-preview-changes.csv");
 
     let upserted = 0;
     const actionableRows = preview.rows.filter((row) => row.operation !== "unchanged");
@@ -407,6 +408,8 @@ async function run() {
         changedFields: row.changedFields.join(" | "),
     }));
     writeFileSync(previewCsvPath, stringifyCsv(previewCsvHeaders, previewCsvRows));
+    const previewChangesRows = previewCsvRows.filter((row) => row.operation !== "unchanged");
+    writeFileSync(previewChangesCsvPath, stringifyCsv(previewCsvHeaders, previewChangesRows));
 
     console.log("CSV import completed.");
     console.log(`Source file: ${absolutePath}`);
@@ -419,6 +422,7 @@ async function run() {
     console.log(`Issues: ${report.issues.errors} errors, ${report.issues.warnings} warnings`);
     console.log(`Report path: ${reportPath}`);
     console.log(`Preview CSV path: ${previewCsvPath}`);
+    console.log(`Preview changes CSV path: ${previewChangesCsvPath}`);
 
     if (candidates.length === 0) {
         throw new Error("Import edilebilir satir yok. Raporu kontrol et.");

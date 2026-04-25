@@ -120,6 +120,10 @@ Preview tablo raporu (CSV):
 
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/inventory-import-preview.csv`
 
+Sadece degisenler (insert/update) CSV:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/inventory-import-preview-changes.csv`
+
 Raporda ayrıca şunlar görünür:
 - `preview.inserts`
 - `preview.updates`
