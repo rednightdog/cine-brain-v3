@@ -21,6 +21,8 @@
     "db:validate:contract": "tsx scripts/validate-catalog-contract.ts",
     "db:validate:contract:cam-lens": "tsx scripts/validate-catalog-contract.ts --cam-lens-only",
     "db:validate:contract:cam-lens:enforce": "tsx scripts/validate-catalog-contract.ts --cam-lens-only --enforce-pending",
+    "db:import:csv": "tsx scripts/import-inventory-csv.ts",
+    "db:import:csv:template:dry": "tsx scripts/import-inventory-csv.ts --file ./imports/inventory-template.csv --dry-run",
     "db:pipeline:quality": "npm run db:fill:gaps && npm run db:validate:contract:cam-lens"
   },
   "dependencies": {

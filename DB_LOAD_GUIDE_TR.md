@@ -60,6 +60,46 @@ npm run db:seed
 
 Sadece temiz başlangıç istiyorsan kullan.
 
+### C) CSV ile toplu envanter import (kamera/lens odaklı)
+
+Kendi envanter dosyanı güvenli `upsert` ile içeri almak için:
+
+1. Şablon dosyayı kopyala ve doldur:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/imports/inventory-template.csv`
+
+2. Önce dry-run:
+
+```bash
+npm run db:import:csv:template:dry
+```
+
+veya kendi dosyanla:
+
+```bash
+npm run db:import:csv -- --file ./imports/my-inventory.csv --dry-run
+```
+
+3. Sadece kamera/lens import etmek için:
+
+```bash
+npm run db:import:csv -- --file ./imports/my-inventory.csv --only-cam-lens
+```
+
+4. Gerçek import (upsert):
+
+```bash
+npm run db:import:csv -- --file ./imports/my-inventory.csv
+```
+
+Opsiyonel:
+- `--status PENDING` (import edilenleri onay beklemeye alır)
+- `--batch-size 25` (büyük dosyalarda batch boyutu)
+
+Import raporu:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/inventory-import-report.json`
+
 ## 4) Doğrulama
 
 ```bash

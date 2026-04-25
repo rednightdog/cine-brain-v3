@@ -1,0 +1,4 @@
+brand,model,name,category,subcategory,description,mount,sensor_size,resolution,recordingFormats,coverage,focal_length,aperture,lens_type,power_draw_w,daily_rate_est,status
+ARRI,ALEXA 35,ARRI Alexa 35,Camera,Bodies,Primary camera body,LPL,S35,4.6K,"4.6K ARRIRAW | 4K ProRes",,,,,90,1500,APPROVED
+Cooke,S4i 50mm,Cooke S4/i 50mm,Lens,Prime,Cinema prime lens,PL,,,,FF,50mm,T2.0,Spherical,,350,APPROVED
+SmallHD,703 UltraBright,SmallHD 703 Monitor,Monitor,Monitors,Onboard monitor,,,,,,,,,22,120,APPROVED
