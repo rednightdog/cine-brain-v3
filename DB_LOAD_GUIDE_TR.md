@@ -140,6 +140,14 @@ npm run db:export:csv
 
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/imports/my-inventory.csv`
 
+Not: Bu komut varsayılan olarak **editable CSV** üretir (Excel'de kolay düzenleme için JSON kolonları sadeleştirilir).
+
+JSON detaylarıyla full export:
+
+```bash
+npm run db:export:csv:full
+```
+
 Tüm kategoriler + private + pending dahil:
 
 ```bash

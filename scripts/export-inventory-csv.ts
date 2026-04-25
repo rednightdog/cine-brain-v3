@@ -9,6 +9,7 @@ type CliOptions = {
     onlyCamLens: boolean;
     includePending: boolean;
     includePrivate: boolean;
+    editable: boolean;
 };
 
 function parseCliOptions(): CliOptions {
@@ -17,6 +18,7 @@ function parseCliOptions(): CliOptions {
     let onlyCamLens = false;
     let includePending = false;
     let includePrivate = false;
+    let editable = false;
 
     for (let i = 0; i < args.length; i += 1) {
         const arg = args[i];
@@ -30,6 +32,10 @@ function parseCliOptions(): CliOptions {
         }
         if (arg === "--include-private") {
             includePrivate = true;
+            continue;
+        }
+        if (arg === "--editable") {
+            editable = true;
             continue;
         }
         if (arg.startsWith("--file=")) {
@@ -48,6 +54,7 @@ function parseCliOptions(): CliOptions {
         onlyCamLens,
         includePending,
         includePrivate,
+        editable,
     };
 }
 
@@ -64,6 +71,37 @@ function stringifyCsv(headers: string[], rows: Record<string, unknown>[]): strin
         lines.push(headers.map((h) => toCsvCell(row[h])).join(","));
     }
     return lines.join("\n") + "\n";
+}
+
+function asString(value: unknown): string {
+    return typeof value === "string" ? value.trim() : "";
+}
+
+function formatRecordingFormatsForEditable(raw: string | null): string {
+    if (!raw || !raw.trim()) return "";
+
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return raw;
+
+        const values = parsed
+            .map((entry) => {
+                if (typeof entry === "string") return entry.trim();
+                if (!entry || typeof entry !== "object") return "";
+                const row = entry as Record<string, unknown>;
+                const direct = asString(row.format);
+                if (direct) return direct;
+                const resolution = asString(row.resolution);
+                const codec = asString(row.codec);
+                if (resolution && codec) return `${resolution} ${codec}`;
+                return resolution || codec;
+            })
+            .filter((value) => value.length > 0);
+
+        return values.join(" | ");
+    } catch {
+        return raw;
+    }
 }
 
 async function run() {
@@ -102,37 +140,81 @@ async function run() {
         orderBy: [{ category: "asc" }, { brand: "asc" }, { model: "asc" }, { name: "asc" }],
     });
 
-    const headers = [
-        "brand",
-        "model",
-        "name",
-        "category",
-        "subcategory",
-        "description",
-        "mount",
-        "sensor_size",
-        "resolution",
-        "recordingFormats",
-        "coverage",
-        "focal_length",
-        "aperture",
-        "lens_type",
-        "power_draw_w",
-        "weight_kg",
-        "daily_rate_est",
-        "status",
-        "technicalData",
-        "labMetrics",
-        "imageUrl",
-        "sourceUrl",
-    ];
+    const headers = options.editable
+        ? [
+              "brand",
+              "model",
+              "name",
+              "category",
+              "subcategory",
+              "description",
+              "mount",
+              "sensor_size",
+              "resolution",
+              "recordingFormats",
+              "coverage",
+              "focal_length",
+              "aperture",
+              "lens_type",
+              "power_draw_w",
+              "weight_kg",
+              "daily_rate_est",
+              "status",
+              "sourceUrl",
+          ]
+        : [
+              "brand",
+              "model",
+              "name",
+              "category",
+              "subcategory",
+              "description",
+              "mount",
+              "sensor_size",
+              "resolution",
+              "recordingFormats",
+              "coverage",
+              "focal_length",
+              "aperture",
+              "lens_type",
+              "power_draw_w",
+              "weight_kg",
+              "daily_rate_est",
+              "status",
+              "technicalData",
+              "labMetrics",
+              "imageUrl",
+              "sourceUrl",
+          ];
 
-    const rows = items.map((item) => ({
-        ...item,
-        recordingFormats: item.recordingFormats || "",
-        technicalData: item.technicalData || "",
-        labMetrics: item.labMetrics || "",
-    }));
+    const rows = options.editable
+        ? items.map((item) => ({
+              brand: item.brand,
+              model: item.model,
+              name: item.name,
+              category: item.category,
+              subcategory: item.subcategory,
+              description: item.description,
+              mount: item.mount,
+              sensor_size: item.sensor_size,
+              resolution: item.resolution,
+              recordingFormats: formatRecordingFormatsForEditable(item.recordingFormats),
+              coverage: item.coverage,
+              focal_length: item.focal_length,
+              aperture: item.aperture,
+              lens_type: item.lens_type,
+              power_draw_w: item.power_draw_w,
+              weight_kg: item.weight_kg,
+              daily_rate_est: item.daily_rate_est,
+              status: item.status,
+              sourceUrl: item.sourceUrl,
+          }))
+        : items.map((item) => ({
+              ...item,
+              recordingFormats: item.recordingFormats || "",
+              technicalData: item.technicalData || "",
+              labMetrics: item.labMetrics || "",
+          }));
 
     mkdirSync(dirname(options.filePath), { recursive: true });
     writeFileSync(options.filePath, stringifyCsv(headers, rows), "utf8");
@@ -140,6 +222,7 @@ async function run() {
     console.log("Inventory export completed.");
     console.log(`Rows exported: ${rows.length}`);
     console.log(`Output file: ${options.filePath}`);
+    console.log(`Mode: ${options.editable ? "EDITABLE" : "FULL (JSON included)"}`);
     console.log(`Scope: ${options.onlyCamLens ? "CAM+LNS" : "ALL CATEGORIES"}`);
     console.log(`Status filter: ${options.includePending ? "ALL" : "APPROVED only"}`);
     console.log(`Privacy filter: ${options.includePrivate ? "ALL" : "PUBLIC only"}`);
