@@ -3276,7 +3276,39 @@ export const equipmentData: EquipmentItem[] = [
     { id: 'mon-fsi-dm170', name: 'Flanders DM170', brand: 'Flanders Scientific', model: 'DM170', category: 'Monitor', subcategory: 'Reference', description: 'Field rugged color critical monitor.', specs: { size: '17"' }, daily_rate_est: 175 },
 
     // --- EXPANSION: GRIP & SUPPORT ---
-    { id: 'sup-ronin-4d', name: 'DJI Ronin 4D 6K', brand: 'DJI', model: 'Ronin 4D', category: 'Camera', subcategory: 'Gimbal Camera', description: 'Cinematography camera with built-in 4-axis stabilization.', specs: { sensor_size: '36x24', sensor_coverage: 'FF', mount: 'DL/E/M/PL', resolution: '6K' }, daily_rate_est: 350 },
+    {
+        id: 'sup-ronin-4d',
+        name: 'DJI Ronin 4D 6K',
+        brand: 'DJI',
+        model: 'Ronin 4D',
+        category: 'Camera',
+        subcategory: 'Gimbal Camera',
+        description: 'Cinematography camera with built-in 4-axis stabilization.',
+        specs: {
+            sensor_size: '36x24',
+            sensor_coverage: 'FF',
+            mount: 'DL/E/M/PL',
+            resolution: '6K',
+            recording_formats: [
+                {
+                    resolution: '6K (Full Frame)',
+                    codec: 'Apple ProRes RAW HQ / Apple ProRes RAW',
+                    max_fps: 'up to 60 fps (DJI PROSSD 1TB)'
+                },
+                {
+                    resolution: '6K',
+                    codec: 'Apple ProRes 422 HQ / Apple ProRes 422 LT',
+                    max_fps: '23.976/24/25/29.97/30 fps (CFexpress 2.0 Type B)'
+                },
+                {
+                    resolution: 'C4K / 2K',
+                    codec: 'Apple ProRes 422 HQ / Apple ProRes 422 LT / H.264 (4:2:0 10-bit)',
+                    max_fps: 'up to 120 fps (media dependent)'
+                }
+            ]
+        },
+        daily_rate_est: 350
+    },
     { id: 'sup-rs3-pro', name: 'DJI RS3 Pro Combo', brand: 'DJI', model: 'RS3 Pro', category: 'Support', subcategory: 'Gimbal', description: 'Heavy payload handheld gimbal.', specs: { payload_kg: 4.5 }, daily_rate_est: 110 },
 
     { id: 'sup-dana-dolly', name: 'Dana Dolly Universal Kit', brand: 'Dana Dolly', model: 'Universal Kit', category: 'Support', subcategory: 'Dolly', description: 'Portable dolly system for any size pipe.', specs: {}, daily_rate_est: 80 },

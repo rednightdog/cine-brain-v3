@@ -24,6 +24,29 @@ const POWER_OVERRIDES_BY_MODEL: Record<string, number> = {
     "FreeStyle T44": 150,
 };
 
+const CAMERA_RECORDING_OVERRIDES_BY_MODEL: Record<
+    string,
+    Array<{ resolution: string; codec: string; max_fps: string; data_rate?: string }>
+> = {
+    "Ronin 4D": [
+        {
+            resolution: "6K (Full Frame)",
+            codec: "Apple ProRes RAW HQ / Apple ProRes RAW",
+            max_fps: "up to 60 fps (DJI PROSSD 1TB)",
+        },
+        {
+            resolution: "6K",
+            codec: "Apple ProRes 422 HQ / Apple ProRes 422 LT",
+            max_fps: "23.976/24/25/29.97/30 fps (CFexpress 2.0 Type B)",
+        },
+        {
+            resolution: "C4K / 2K",
+            codec: "Apple ProRes 422 HQ / Apple ProRes 422 LT / H.264 (4:2:0 10-bit)",
+            max_fps: "up to 120 fps (media dependent)",
+        },
+    ],
+};
+
 function normalizeCoverage(value: string): string {
     const text = value.trim().toUpperCase();
     if (text.includes("SUPER") || text.includes("S35")) return "S35";
@@ -235,6 +258,37 @@ async function fillCameraTechnicalData() {
     return { scanned: cameras.length, updated: ops.length };
 }
 
+async function fillCameraRecordingFormats() {
+    const cameras = await prisma.equipmentItem.findMany({
+        where: {
+            category: "CAM",
+            recordingFormats: null,
+            status: "APPROVED",
+            isPrivate: false,
+        },
+        select: {
+            id: true,
+            model: true,
+        },
+    });
+
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+    for (const item of cameras) {
+        const override = CAMERA_RECORDING_OVERRIDES_BY_MODEL[item.model];
+        if (!override) continue;
+        ops.push(
+            prisma.equipmentItem.update({
+                where: { id: item.id },
+                data: { recordingFormats: JSON.stringify(override) },
+            })
+        );
+    }
+
+    await executeInBatches(ops);
+
+    return { scanned: cameras.length, updated: ops.length };
+}
+
 async function fillLensTechnicalData() {
     const lenses = await prisma.equipmentItem.findMany({
         where: {
@@ -367,6 +421,7 @@ async function fillLightingPower() {
 async function main() {
     const lensResult = await fillLensCoverage();
     const lensTypeResult = await fillLensType();
+    const camRecordingResult = await fillCameraRecordingFormats();
     const camTechResult = await fillCameraTechnicalData();
     const lensTechResult = await fillLensTechnicalData();
     const lightResult = await fillLightingPower();
@@ -377,6 +432,9 @@ async function main() {
     );
     console.log(
         `LNS lens_type: updated ${lensTypeResult.updated}/${lensTypeResult.scanned} records`
+    );
+    console.log(
+        `CAM recordingFormats: updated ${camRecordingResult.updated}/${camRecordingResult.scanned} records`
     );
     console.log(
         `CAM technicalData: updated ${camTechResult.updated}/${camTechResult.scanned} records`
