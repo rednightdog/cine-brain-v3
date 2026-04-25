@@ -30,6 +30,8 @@
     "db:export:csv:all": "tsx scripts/export-inventory-csv.ts --file ./imports/my-inventory-all.csv --include-pending --include-private",
     "db:sync:inventory": "tsx scripts/sync-inventory-cycle.ts --file ./imports/my-inventory.csv --only-cam-lens",
     "db:sync:inventory:dry": "tsx scripts/sync-inventory-cycle.ts --file ./imports/my-inventory.csv --only-cam-lens --dry-run-only",
+    "db:restore:latest": "tsx scripts/restore-inventory-backup.ts --only-cam-lens",
+    "db:restore:latest:dry": "tsx scripts/restore-inventory-backup.ts --only-cam-lens --dry-run-only",
     "db:pipeline:quality": "npm run db:fill:gaps && npm run db:validate:contract:cam-lens"
   },
   "dependencies": {
