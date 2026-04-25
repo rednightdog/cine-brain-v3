@@ -123,6 +123,29 @@ Prisma Studio'da `EquipmentItem` tablosunda kayıtları ve alanları kontrol et:
 - `mount`, `sensor_size`, `coverage`
 - `technicalData`, `labMetrics`, `recordingFormats`
 
+## CSV Nereden Geliyor?
+
+CSV iki kaynaktan gelebilir:
+
+1. Manuel: `imports/inventory-template*.csv` şablonunu doldurursun.
+2. Otomatik export: Mevcut DB kayıtlarından CSV üretiriz.
+
+Kamera+lens odaklı export:
+
+```bash
+npm run db:export:csv
+```
+
+Çıktı:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/imports/my-inventory.csv`
+
+Tüm kategoriler + private + pending dahil:
+
+```bash
+npm run db:export:csv:all
+```
+
 ## 5) Sık kullanılan tek satır komutlar
 
 İlk kurulum + güvenli katalog yükleme:

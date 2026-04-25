@@ -24,6 +24,8 @@
     "db:import:csv": "tsx scripts/import-inventory-csv.ts",
     "db:import:csv:template:dry": "tsx scripts/import-inventory-csv.ts --file ./imports/inventory-template.csv --dry-run",
     "db:import:csv:template:tr:dry": "tsx scripts/import-inventory-csv.ts --file ./imports/inventory-template-tr.csv --dry-run",
+    "db:export:csv": "tsx scripts/export-inventory-csv.ts --file ./imports/my-inventory.csv --only-cam-lens",
+    "db:export:csv:all": "tsx scripts/export-inventory-csv.ts --file ./imports/my-inventory-all.csv --include-pending --include-private",
     "db:pipeline:quality": "npm run db:fill:gaps && npm run db:validate:contract:cam-lens"
   },
   "dependencies": {
