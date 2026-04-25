@@ -112,6 +112,24 @@ Import raporu:
 
 Not: Import scripti `,`, `;` ve `TAB` ayraçlarını otomatik algılar.
 
+### D) Tek Komut Güvenli Sync (önerilen günlük akış)
+
+Bu akış sırayla şunları yapar:
+1. Mevcut DB’den backup CSV alır (`imports/backups/`)
+2. Senin CSV için dry-run yapar
+3. Hata yoksa gerçek import yapar
+4. Kamera/lens kalite pipeline çalıştırır
+
+```bash
+npm run db:sync:inventory
+```
+
+Sadece dry-run + backup için:
+
+```bash
+npm run db:sync:inventory:dry
+```
+
 ## 4) Doğrulama
 
 ```bash
