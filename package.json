@@ -22,6 +22,7 @@
     "db:validate:contract:cam-lens": "tsx scripts/validate-catalog-contract.ts --cam-lens-only",
     "db:validate:contract:cam-lens:enforce": "tsx scripts/validate-catalog-contract.ts --cam-lens-only --enforce-pending",
     "db:import:csv": "tsx scripts/import-inventory-csv.ts",
+    "db:import:csv:preview": "tsx scripts/import-inventory-csv.ts --file ./imports/my-inventory.csv --dry-run --only-cam-lens",
     "db:import:csv:template:dry": "tsx scripts/import-inventory-csv.ts --file ./imports/inventory-template.csv --dry-run",
     "db:import:csv:template:tr:dry": "tsx scripts/import-inventory-csv.ts --file ./imports/inventory-template-tr.csv --dry-run",
     "db:export:csv": "tsx scripts/export-inventory-csv.ts --file ./imports/my-inventory.csv --only-cam-lens --editable",

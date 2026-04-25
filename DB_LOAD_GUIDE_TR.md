@@ -90,6 +90,12 @@ veya kendi dosyanla:
 npm run db:import:csv -- --file ./imports/my-inventory.csv --dry-run
 ```
 
+Hazir CSV preview (my-inventory + cam/lens):
+
+```bash
+npm run db:import:csv:preview
+```
+
 3. Sadece kamera/lens import etmek için:
 
 ```bash
@@ -110,6 +116,12 @@ Import raporu:
 
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/inventory-import-report.json`
 
+Raporda ayrıca şunlar görünür:
+- `preview.inserts`
+- `preview.updates`
+- `preview.unchanged`
+- `preview.changedFieldFrequency`
+
 Not: Import scripti `,`, `;` ve `TAB` ayraçlarını otomatik algılar.
 
 ### D) Tek Komut Güvenli Sync (önerilen günlük akış)
@@ -129,6 +141,8 @@ Sadece dry-run + backup için:
 ```bash
 npm run db:sync:inventory:dry
 ```
+
+Not: sync dry-run adımında terminalde otomatik preview özeti yazılır (`insert/update/unchanged`).
 
 ## 4) Doğrulama
 

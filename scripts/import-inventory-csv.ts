@@ -13,6 +13,21 @@ type CliOptions = {
     batchSize: number;
 };
 
+type PreviewOperation = "insert" | "update" | "unchanged";
+
+type PreviewRow = {
+    row: number;
+    key: PreparedImportItem["key"];
+    operation: PreviewOperation;
+    changedFields: string[];
+};
+
+type ExistingItem = {
+    brand: string;
+    model: string;
+    name: string;
+} & Record<string, unknown>;
+
 function parseCliOptions(): CliOptions {
     const args = process.argv.slice(2);
     const options: CliOptions = {
@@ -97,6 +112,158 @@ function printUsage() {
     console.log("  --batch-size 25");
 }
 
+function makeKey(input: { brand: string; model: string; name: string }): string {
+    return `${input.brand}|||${input.model}|||${input.name}`;
+}
+
+function canonicalizeJsonString(text: string): string {
+    const trimmed = text.trim();
+    if (!trimmed) return "";
+    if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return trimmed;
+    try {
+        return JSON.stringify(JSON.parse(trimmed));
+    } catch {
+        return trimmed;
+    }
+}
+
+function normalizeComparable(value: unknown): unknown {
+    if (value == null) return null;
+    if (typeof value === "string") return canonicalizeJsonString(value);
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "boolean") return value;
+    return value;
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+    return normalizeComparable(a) === normalizeComparable(b);
+}
+
+async function fetchExistingByKeys(candidates: PreparedImportItem[]): Promise<Map<string, ExistingItem>> {
+    if (candidates.length === 0) return new Map();
+
+    const rows = candidates.map((item) => item.key);
+    const keyMap = new Map<string, ExistingItem>();
+    const queryBatchSize = 200;
+
+    for (let i = 0; i < rows.length; i += queryBatchSize) {
+        const batch = rows.slice(i, i + queryBatchSize);
+        const found = await prisma.equipmentItem.findMany({
+            where: {
+                OR: batch.map((row) => ({
+                    brand: row.brand,
+                    model: row.model,
+                    name: row.name,
+                })),
+            },
+            select: {
+                brand: true,
+                model: true,
+                name: true,
+                category: true,
+                subcategory: true,
+                description: true,
+                daily_rate_est: true,
+                mount: true,
+                weight_kg: true,
+                resolution: true,
+                dynamic_range: true,
+                native_iso: true,
+                focal_length: true,
+                aperture: true,
+                power_draw_w: true,
+                sensor_size: true,
+                sensor_type: true,
+                image_circle_mm: true,
+                lens_type: true,
+                close_focus_m: true,
+                front_diameter_mm: true,
+                length_mm: true,
+                squeeze: true,
+                coverage: true,
+                sensor_coverage: true,
+                recordingFormats: true,
+                technicalData: true,
+                labMetrics: true,
+                imageUrl: true,
+                payload_kg: true,
+                status: true,
+                isAiResearched: true,
+                sourceUrl: true,
+                isVerified: true,
+                isPrivate: true,
+                parentId: true,
+            },
+        });
+
+        for (const item of found) {
+            keyMap.set(makeKey(item), item as ExistingItem);
+        }
+    }
+
+    return keyMap;
+}
+
+function buildPreview(candidates: PreparedImportItem[], existingMap: Map<string, ExistingItem>) {
+    const rows: PreviewRow[] = [];
+    const changedFieldFrequency: Record<string, number> = {};
+
+    let inserts = 0;
+    let updates = 0;
+    let unchanged = 0;
+
+    for (const candidate of candidates) {
+        const existing = existingMap.get(makeKey(candidate.key));
+        if (!existing) {
+            inserts += 1;
+            rows.push({
+                row: candidate.rowNumber,
+                key: candidate.key,
+                operation: "insert",
+                changedFields: Object.keys(candidate.data),
+            });
+            continue;
+        }
+
+        const changedFields: string[] = [];
+        for (const [field, nextValue] of Object.entries(candidate.data as Record<string, unknown>)) {
+            if (typeof nextValue === "undefined") continue;
+            const currentValue = existing[field];
+            if (!valuesEqual(currentValue, nextValue)) {
+                changedFields.push(field);
+                changedFieldFrequency[field] = (changedFieldFrequency[field] || 0) + 1;
+            }
+        }
+
+        if (changedFields.length === 0) {
+            unchanged += 1;
+            rows.push({
+                row: candidate.rowNumber,
+                key: candidate.key,
+                operation: "unchanged",
+                changedFields: [],
+            });
+            continue;
+        }
+
+        updates += 1;
+        rows.push({
+            row: candidate.rowNumber,
+            key: candidate.key,
+            operation: "update",
+            changedFields,
+        });
+    }
+
+    return {
+        inserts,
+        updates,
+        unchanged,
+        changedFieldFrequency,
+        rows,
+    };
+}
+
 async function run() {
     const options = parseCliOptions();
     if (!options.filePath) {
@@ -141,13 +308,21 @@ async function run() {
     }
 
     const counts = countIssues(issues);
+    const existingMap = await fetchExistingByKeys(candidates);
+    const preview = buildPreview(candidates, existingMap);
     const reportsDir = join(process.cwd(), "reports");
     mkdirSync(reportsDir, { recursive: true });
     const reportPath = join(reportsDir, "inventory-import-report.json");
 
     let upserted = 0;
+    const actionableRows = preview.rows.filter((row) => row.operation !== "unchanged");
+    const candidateMap = new Map(candidates.map((item) => [makeKey(item.key), item] as const));
+    const actionableCandidates = actionableRows
+        .map((row) => candidateMap.get(makeKey(row.key)))
+        .filter((item): item is PreparedImportItem => Boolean(item));
+
     if (!options.dryRun) {
-        const batches = chunk(candidates, options.batchSize);
+        const batches = chunk(actionableCandidates, options.batchSize);
         for (let i = 0; i < batches.length; i += 1) {
             await Promise.all(
                 batches[i].map((item) =>
@@ -162,7 +337,7 @@ async function run() {
             );
             upserted += batches[i].length;
             if ((i + 1) % 10 === 0 || i === batches.length - 1) {
-                console.log(`Import progress: ${upserted}/${candidates.length}`);
+                console.log(`Import progress: ${upserted}/${actionableCandidates.length}`);
             }
         }
     }
@@ -182,6 +357,13 @@ async function run() {
             invalidRows,
             filteredRows,
             upsertedRows: options.dryRun ? 0 : upserted,
+        },
+        preview: {
+            inserts: preview.inserts,
+            updates: preview.updates,
+            unchanged: preview.unchanged,
+            changedFieldFrequency: preview.changedFieldFrequency,
+            sampleChanges: preview.rows.filter((row) => row.operation !== "unchanged").slice(0, 120),
         },
         issues: {
             errors: counts.errors,
@@ -204,6 +386,7 @@ async function run() {
     console.log(`Imported candidates: ${report.totals.importedRows}`);
     console.log(`Invalid rows: ${report.totals.invalidRows}`);
     console.log(`Filtered rows: ${report.totals.filteredRows}`);
+    console.log(`Preview: ${report.preview.inserts} inserts, ${report.preview.updates} updates, ${report.preview.unchanged} unchanged`);
     console.log(`Upserted rows: ${report.totals.upsertedRows}`);
     console.log(`Issues: ${report.issues.errors} errors, ${report.issues.warnings} warnings`);
     console.log(`Report path: ${reportPath}`);

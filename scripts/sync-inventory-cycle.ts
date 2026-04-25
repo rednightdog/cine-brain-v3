@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 type CliOptions = {
@@ -21,6 +21,11 @@ type ImportReport = {
     issues?: {
         errors?: number;
         warnings?: number;
+    };
+    preview?: {
+        inserts?: number;
+        updates?: number;
+        unchanged?: number;
     };
 };
 
@@ -140,9 +145,14 @@ async function run() {
     const report = readImportReport(reportPath);
     const errors = report.issues?.errors || 0;
     const warnings = report.issues?.warnings || 0;
+    const inserts = report.preview?.inserts || 0;
+    const updates = report.preview?.updates || 0;
+    const unchanged = report.preview?.unchanged || 0;
     if (errors > 0) {
         throw new Error(`Dry-run errors bulundu (${errors}). Import durduruldu. Rapor: ${reportPath}`);
     }
+
+    console.log(`Dry-run preview: ${inserts} inserts, ${updates} updates, ${unchanged} unchanged`);
 
     if (options.dryRunOnly) {
         console.log("Dry-run-only mode complete.");
