@@ -17,6 +17,18 @@ describe("parseCsvTable", () => {
         expect(result.rows[0].description).toBe("Body, with comma");
         expect(result.rows[1].description).toContain("Line 1\nLine 2");
     });
+
+    it("auto-detects semicolon-delimited CSV from spreadsheet exports", () => {
+        const csv = [
+            "brand;model;name;category;daily_rate_est",
+            "ARRI;ALEXA 35;ARRI Alexa 35;Camera;1.500",
+        ].join("\n");
+
+        const result = parseCsvTable(csv);
+        expect(result.rows).toHaveLength(1);
+        expect(result.rows[0].brand).toBe("ARRI");
+        expect(result.rows[0].daily_rate_est).toBe("1.500");
+    });
 });
 
 describe("parseImportRow", () => {
@@ -69,5 +81,25 @@ describe("parseImportRow", () => {
         expect(parsed.item).not.toBeNull();
         expect(parsed.item?.category).toBe("SUP");
         expect(parsed.issues.some((x) => x.level === "warning" && x.field === "category")).toBe(true);
+    });
+
+    it("parses locale numeric formats for integer and float fields", () => {
+        const parsed = parseImportRow(
+            {
+                brand: "ARRI",
+                model: "ALEXA Mini LF",
+                name: "ARRI Alexa Mini LF",
+                category: "Camera",
+                daily_rate_est: "1.500",
+                power_draw_w: "98",
+                weight_kg: "2,9",
+            },
+            9
+        );
+
+        expect(parsed.item).not.toBeNull();
+        expect(parsed.item?.data.daily_rate_est).toBe(1500);
+        expect(parsed.item?.data.power_draw_w).toBe(98);
+        expect(parsed.item?.data.weight_kg).toBe(2.9);
     });
 });

@@ -68,10 +68,20 @@ Kendi envanter dosyanı güvenli `upsert` ile içeri almak için:
 
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/imports/inventory-template.csv`
 
+TR Excel (nokta-binlik, virgül-ondalık) için alternatif:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/imports/inventory-template-tr.csv`
+
 2. Önce dry-run:
 
 ```bash
 npm run db:import:csv:template:dry
+```
+
+TR şablon dry-run:
+
+```bash
+npm run db:import:csv:template:tr:dry
 ```
 
 veya kendi dosyanla:
@@ -99,6 +109,8 @@ Opsiyonel:
 Import raporu:
 
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/inventory-import-report.json`
+
+Not: Import scripti `,`, `;` ve `TAB` ayraçlarını otomatik algılar.
 
 ## 4) Doğrulama
 

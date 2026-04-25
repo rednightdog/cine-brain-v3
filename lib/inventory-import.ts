@@ -176,7 +176,24 @@ function normalizeCell(value: string | undefined): string {
     return (value || "").trim();
 }
 
-function parseCsvMatrix(csvText: string): string[][] {
+function detectCsvDelimiter(csvText: string): "," | ";" | "\t" {
+    const firstLine = csvText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0);
+
+    if (!firstLine) return ",";
+
+    const commaCount = (firstLine.match(/,/g) || []).length;
+    const semicolonCount = (firstLine.match(/;/g) || []).length;
+    const tabCount = (firstLine.match(/\t/g) || []).length;
+
+    if (tabCount > commaCount && tabCount > semicolonCount) return "\t";
+    if (semicolonCount > commaCount) return ";";
+    return ",";
+}
+
+function parseCsvMatrix(csvText: string, delimiter: "," | ";" | "\t"): string[][] {
     const rows: string[][] = [];
     let row: string[] = [];
     let current = "";
@@ -195,7 +212,7 @@ function parseCsvMatrix(csvText: string): string[][] {
             continue;
         }
 
-        if (char === "," && !inQuotes) {
+        if (char === delimiter && !inQuotes) {
             row.push(current);
             current = "";
             continue;
@@ -224,7 +241,8 @@ function parseCsvMatrix(csvText: string): string[][] {
 }
 
 export function parseCsvTable(csvText: string): ParsedCsvTable {
-    const matrix = parseCsvMatrix(csvText);
+    const delimiter = detectCsvDelimiter(csvText);
+    const matrix = parseCsvMatrix(csvText, delimiter);
     const issues: CsvImportIssue[] = [];
 
     if (matrix.length === 0) {
@@ -313,18 +331,47 @@ function normalizeCategory(raw: string | null): { category: string; recognized: 
     return { category: "SUP", recognized: false };
 }
 
+function parseLocaleNumber(raw: string, integer: boolean): number | null {
+    let value = raw
+        .trim()
+        .replace(/\s+/g, "")
+        .replace(/[^\d,.\-]/g, "");
+
+    if (!value || value === "-" || value === "." || value === ",") return null;
+
+    const lastComma = value.lastIndexOf(",");
+    const lastDot = value.lastIndexOf(".");
+
+    if (lastComma !== -1 && lastDot !== -1) {
+        const decimalIndex = Math.max(lastComma, lastDot);
+        const integerPart = value.slice(0, decimalIndex).replace(/[.,]/g, "");
+        const decimalPart = value.slice(decimalIndex + 1).replace(/[^\d]/g, "");
+        value = decimalPart ? `${integerPart}.${decimalPart}` : integerPart;
+    } else if (lastComma !== -1) {
+        const parts = value.split(",");
+        const decimalPart = parts[parts.length - 1];
+        const likelyThousands = decimalPart.length === 3 && (parts.length > 2 || integer);
+        value = likelyThousands ? parts.join("") : `${parts.slice(0, -1).join("")}.${decimalPart}`;
+    } else if (lastDot !== -1) {
+        const parts = value.split(".");
+        const decimalPart = parts[parts.length - 1];
+        const likelyThousands = decimalPart.length === 3 && (parts.length > 2 || integer);
+        value = likelyThousands ? parts.join("") : `${parts.slice(0, -1).join("")}.${decimalPart}`;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return integer ? Math.round(parsed) : parsed;
+}
+
 function parseOptionalInteger(raw: string | null): number | null {
     if (!raw) return null;
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return null;
-    return Math.round(value);
+    return parseLocaleNumber(raw, true);
 }
 
 function parseOptionalFloat(raw: string | null): number | null {
     if (!raw) return null;
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return null;
-    return value;
+    return parseLocaleNumber(raw, false);
 }
 
 function parseOptionalBoolean(raw: string | null): boolean | null {
