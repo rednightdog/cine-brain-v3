@@ -140,6 +140,28 @@ Cikti:
 
 `/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/cam-lens-priority-updates.csv`
 
+CSV uzerinden dogrudan duzenlemek icin editable sheet:
+
+```bash
+npm run db:priority:cam-lens:sheet
+```
+
+Olusan dosya:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/imports/my-inventory-priority-20.csv`
+
+Dry-run uygulama:
+
+```bash
+npm run db:priority:cam-lens:apply:dry
+```
+
+Gercek uygulama:
+
+```bash
+npm run db:priority:cam-lens:apply
+```
+
 Not: Import scripti `,`, `;` ve `TAB` ayraçlarını otomatik algılar.
 
 ### D) Tek Komut Güvenli Sync (önerilen günlük akış)
