@@ -236,14 +236,14 @@ function isPhysicallyImpossibleMount(lensMount: string, cameraMount: string): bo
 }
 
 function getLensImageCircleMm(item: InventoryItem, specs: Record<string, unknown>): number | undefined {
-    if (typeof item.image_circle_mm === "number") return item.image_circle_mm;
-
     const raw = specs.image_circle_mm || specs.imageCircle || specs.image_circle;
     if (typeof raw === "number") return raw;
     if (typeof raw === "string") {
         const parsed = parseFloat(raw.replace(",", "."));
         return Number.isFinite(parsed) ? parsed : undefined;
     }
+
+    if (typeof item.image_circle_mm === "number") return item.image_circle_mm;
 
     return undefined;
 }

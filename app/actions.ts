@@ -50,6 +50,15 @@ type CustomItemInput = {
     category: string;
     subcategory?: string | null;
     description?: string | null;
+    coverage?: string | null;
+    mount?: string | null;
+    lens_type?: string | null;
+    focal_length?: string | null;
+    aperture?: string | null;
+    weight_kg?: number | null;
+    front_diameter_mm?: number | null;
+    image_circle_mm?: number | null;
+    specs_json?: string | null;
     scope?: "private" | "global";
 };
 
@@ -61,6 +70,15 @@ function getErrorMessage(error: unknown, fallback = "Unexpected error"): string 
 function getOptionalStringField(source: Record<string, unknown>, key: string): string | undefined {
     const value = source[key];
     return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function getOptionalNumber(value: number | null | undefined): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function getOptionalInt(value: number | null | undefined): number | undefined {
+    const parsed = getOptionalNumber(value);
+    return parsed === undefined ? undefined : Math.round(parsed);
 }
 
 export async function createProjectAction(data: ProjectPayload) {
@@ -826,6 +844,20 @@ export async function createCustomItemAction(data: CustomItemInput) {
         if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
 
         const isGlobalSuggestion = data.scope === "global";
+        const customSpecs = {
+            coverage: data.coverage || undefined,
+            mount: data.mount || undefined,
+            lens_type: data.lens_type || undefined,
+            focal_length: data.focal_length || undefined,
+            aperture: data.aperture || undefined,
+            weight_kg: getOptionalNumber(data.weight_kg),
+            front_diameter_mm: getOptionalNumber(data.front_diameter_mm),
+            image_circle_mm: getOptionalNumber(data.image_circle_mm),
+        };
+        const hasCustomSpecs = Object.values(customSpecs).some(value => value !== undefined);
+        const specsJson = data.specs_json || (hasCustomSpecs
+            ? JSON.stringify({ source: "User supplied custom lens specs", ...customSpecs })
+            : undefined);
         const newItem = await prisma.equipmentItem.create({
             data: {
                 name: data.model
@@ -837,6 +869,15 @@ export async function createCustomItemAction(data: CustomItemInput) {
                 subcategory: data.subcategory,
                 description: data.description || "Custom Item",
                 daily_rate_est: 0,
+                coverage: customSpecs.coverage,
+                mount: customSpecs.mount,
+                lens_type: customSpecs.lens_type,
+                focal_length: customSpecs.focal_length,
+                aperture: customSpecs.aperture,
+                weight_kg: customSpecs.weight_kg,
+                front_diameter_mm: getOptionalInt(data.front_diameter_mm),
+                image_circle_mm: getOptionalInt(data.image_circle_mm),
+                specs_json: specsJson,
                 isPrivate: !isGlobalSuggestion,
                 ownerId: session.user.id,
                 status: isGlobalSuggestion ? 'PENDING' : 'APPROVED',
