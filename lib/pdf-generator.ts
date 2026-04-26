@@ -1,5 +1,10 @@
 import PDFDocument from 'pdfkit/js/pdfkit.standalone';
 import blobStream from 'blob-stream';
+import {
+    estimateRecordingDuration,
+    formatRecordingDurationEstimate,
+    parseMediaCapacityGb
+} from './recording-duration';
 
 export type PDFItem = {
     name: string;
@@ -14,6 +19,9 @@ export type PDFItem = {
     front_diameter_mm?: number | null;
     quantity?: number;
     specs_json?: string | null;
+    subcategory?: string | null;
+    configJson?: string | null;
+    recordingFormats?: string | null;
 };
 
 export type ProjectData = {
@@ -28,6 +36,26 @@ export type ProjectData = {
     datesJson?: string | null;
     version?: number;
 };
+
+function isCameraCategory(category?: string | null): boolean {
+    const normalized = (category || '').toLowerCase();
+    return normalized === 'cam' || normalized === 'camera';
+}
+
+function isRecordingMediaItem(item: PDFItem): boolean {
+    const hasCapacity = parseMediaCapacityGb(item.name, item.model, item.specs_json) !== null;
+    if (!hasCapacity) return false;
+
+    const text = [
+        item.category,
+        item.subcategory,
+        item.name,
+        item.model,
+        item.specs_json
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return /media|card|drive|memory|cfexpress|cfast|axs|codex|ssd|prossd/.test(text);
+}
 
 export async function generateCineListPDF(data: PDFItem[], project: ProjectData | null): Promise<string> {
 
@@ -294,6 +322,23 @@ export async function generateCineListPDF(data: PDFItem[], project: ProjectData 
                             if (item.sensor_size) specsList.push(item.sensor_size.toLowerCase());
                             if (item.weight_kg) specsList.push(`${item.weight_kg}kg`);
                             if (item.front_diameter_mm) specsList.push(`${item.front_diameter_mm}mm`);
+
+                            const hostCam = isRecordingMediaItem(item)
+                                ? data.find(i => i.assignedCam === item.assignedCam && isCameraCategory(i.category))
+                                : null;
+                            const recordingEstimate = hostCam
+                                ? estimateRecordingDuration({
+                                    cameraConfigJson: hostCam.configJson,
+                                    cameraRecordingFormats: hostCam.recordingFormats,
+                                    mediaName: item.name,
+                                    mediaModel: item.model,
+                                    mediaSpecsJson: item.specs_json,
+                                    mediaQuantity: item.quantity
+                                })
+                                : null;
+                            if (recordingEstimate) {
+                                specsList.push(`REC ${formatRecordingDurationEstimate(recordingEstimate)}`);
+                            }
 
                             if (specsList.length > 0) {
                                 doc.fontSize(7).font('Inter').fillColor(COLOR_GREY_LIGHT).text(specsList.join(' • '), LEFT_MARGIN + xOff, doc.y);

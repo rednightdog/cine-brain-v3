@@ -99,6 +99,7 @@ export type InventoryEntry = {
     weight_kg?: number | null;
     front_diameter_mm?: number | null;
     specs_json?: string | null;
+    recordingFormats?: string | null;
 }
 
 export type ProjectWithItems = {
@@ -239,7 +240,8 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             sensor_size: item.equipment?.sensor_size,
             weight_kg: item.equipment?.weight_kg,
             front_diameter_mm: item.equipment?.front_diameter_mm,
-            specs_json: item.equipment?.specs_json
+            specs_json: item.equipment?.specs_json,
+            recordingFormats: item.equipment?.recordingFormats
         }));
     }, [optimisticItems]);
 
@@ -345,7 +347,10 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                 weight_kg: item.weight_kg,
                 front_diameter_mm: item.front_diameter_mm,
                 quantity: item.quantity,
-                specs_json: item.specs_json
+                specs_json: item.specs_json,
+                subcategory: item.subcategory,
+                configJson: item.configJson,
+                recordingFormats: item.recordingFormats
             };
         });
         const url = await generateCineListPDF(pdfData, activeProject);
