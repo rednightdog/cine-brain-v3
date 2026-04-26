@@ -294,7 +294,7 @@ interface InventoryPanelProps {
         description?: string | null;
         category: string;
         subcategory?: string | null;
-    }, targetCam?: string) => void;
+    }, targetCam?: string) => Promise<{ success: boolean; error?: string }> | void;
     onUpdateItem: (id: string, updates: any) => void; // Used for config
     onQtyChange: (entryIdx: number, delta: number) => void;
     onOpenAdmin?: () => void;
@@ -329,6 +329,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
     // Custom Item State
     const [isCreatingCustom, setIsCreatingCustom] = useState(false);
+    const [isAddingGenericFromSearch, setIsAddingGenericFromSearch] = useState(false);
     const [customForm, setCustomForm] = useState({
         brand: "",
         model: "",
@@ -666,7 +667,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
         };
 
         if (customForm.scope === "project") {
-            onAddProjectOnlyCustomItem(payload, isCameraBody({
+            const result = await onAddProjectOnlyCustomItem(payload, isCameraBody({
                 id: "project-custom-preview",
                 name: `${customForm.brand || "Generic"} ${customForm.model}`,
                 brand: customForm.brand || "Generic",
@@ -674,6 +675,10 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 category: customForm.category,
                 subcategory: customForm.subcategory,
             }) ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
+            if (result && !result.success) {
+                alert(result.error || "Failed to add generic item.");
+                return;
+            }
             setIsCatalogOpen(false);
             setIsCreatingCustom(false);
             setCustomForm({ brand: "", model: "", description: "", category: activeTab, subcategory: "Generic", scope: "project" });
@@ -696,21 +701,31 @@ export function InventoryPanel(props: InventoryPanelProps) {
         }
     };
 
-    const handleAddGenericFromSearch = () => {
+    const handleAddGenericFromSearch = async () => {
         const model = searchQuery.trim();
-        if (!model) return;
+        if (!model || isAddingGenericFromSearch) return;
 
-        onAddProjectOnlyCustomItem({
-            brand: "",
-            model,
-            description: `Project-only generic line from search: ${model}`,
-            category: activeTab,
-            subcategory: "Generic",
-        }, activeTab === "CAM" ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
+        setIsAddingGenericFromSearch(true);
+        try {
+            const result = await onAddProjectOnlyCustomItem({
+                brand: "",
+                model,
+                description: `Project-only generic line from search: ${model}`,
+                category: activeTab,
+                subcategory: "Generic",
+            }, activeTab === "CAM" ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
 
-        setIsCatalogOpen(false);
-        setIsCreatingCustom(false);
-        setSearchQuery("");
+            if (result && !result.success) {
+                alert(result.error || "Failed to add generic item.");
+                return;
+            }
+
+            setIsCatalogOpen(false);
+            setIsCreatingCustom(false);
+            setSearchQuery("");
+        } finally {
+            setIsAddingGenericFromSearch(false);
+        }
     };
 
     const handleDeleteCustom = async (id: string, e: React.MouseEvent) => {
@@ -1457,8 +1472,9 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                             <button
                                                 onClick={handleAddGenericFromSearch}
                                                 className="rounded-md border border-blue-200 bg-white px-3 py-2 text-[10px] font-bold text-blue-700 shadow-sm transition-all active:scale-[0.98]"
+                                                disabled={isAddingGenericFromSearch}
                                             >
-                                                Add Generic Line
+                                                {isAddingGenericFromSearch ? "Adding..." : "Add Generic Line"}
                                             </button>
                                         </div>
                                     </div>
@@ -1828,9 +1844,10 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                             {searchQuery.trim().length > 1 && (
                                                                 <button
                                                                     onClick={handleAddGenericFromSearch}
-                                                                    className="mt-3 rounded-md bg-[#1C1C1E] px-4 py-2 text-[10px] font-bold text-white transition-all active:scale-[0.98]"
+                                                                    className="mt-3 rounded-md bg-[#1C1C1E] px-4 py-2 text-[10px] font-bold text-white transition-all active:scale-[0.98] disabled:opacity-60"
+                                                                    disabled={isAddingGenericFromSearch}
                                                                 >
-                                                                    Add &quot;{searchQuery.trim()}&quot; as Generic
+                                                                    {isAddingGenericFromSearch ? "Adding..." : <>Add &quot;{searchQuery.trim()}&quot; as Generic</>}
                                                                 </button>
                                                             )}
                                                         </div>

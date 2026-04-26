@@ -149,6 +149,11 @@ type ProjectOnlyCustomItemInput = {
     subcategory?: string | null;
 };
 
+type ProjectOnlyCustomItemResult = {
+    success: boolean;
+    error?: string;
+};
+
 type OptimisticAction =
     | { type: "add"; payload: ProjectItem }
     | { type: "delete"; payload: string }
@@ -255,8 +260,11 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     }, [optimisticItems]);
 
     // --- ACTIONS ---
-    const handleAddProjectOnlyCustomItem = async (data: ProjectOnlyCustomItemInput, targetCam?: string) => {
-        if (!activeProjectId) return;
+    const handleAddProjectOnlyCustomItem = async (
+        data: ProjectOnlyCustomItemInput,
+        targetCam?: string
+    ): Promise<ProjectOnlyCustomItemResult> => {
+        if (!activeProjectId) return { success: false, error: "No active project" };
 
         const displayBrand = data.brand?.trim() || "Generic";
         const displayModel = data.model.trim();
@@ -292,8 +300,8 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             camToAssign = "A";
         }
 
-        startTransition(async () => {
-            const tempId = 'temp-' + crypto.randomUUID();
+        const tempId = 'temp-' + crypto.randomUUID();
+        startTransition(() => {
             addOptimisticItem({
                 type: 'add',
                 payload: {
@@ -309,24 +317,29 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                     configJson: "{}"
                 }
             });
-
-            const res = await addKitItemAction(activeProjectId, {
-                customName: displayName,
-                customBrand: displayBrand,
-                customModel: displayModel,
-                customCategory: data.category,
-                customSubcategory: data.subcategory || "Generic",
-                customDescription: data.description || "",
-                assignedCam: camToAssign,
-                quantity: 1,
-                configJson: "{}"
-            });
-            if (res.success) {
-                router.refresh();
-            } else {
-                alert(res.error);
-            }
         });
+
+        const res = await addKitItemAction(activeProjectId, {
+            customName: displayName,
+            customBrand: displayBrand,
+            customModel: displayModel,
+            customCategory: data.category,
+            customSubcategory: data.subcategory || "Generic",
+            customDescription: data.description || "",
+            assignedCam: camToAssign,
+            quantity: 1,
+            configJson: "{}"
+        });
+
+        if (res.success) {
+            router.refresh();
+            return { success: true };
+        }
+
+        startTransition(() => {
+            addOptimisticItem({ type: 'delete', payload: tempId });
+        });
+        return { success: false, error: res.error || "Failed to add generic item" };
     };
 
     const handleAddEquipment = async (item: InventoryItem, targetCam?: string) => {
