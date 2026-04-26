@@ -39,7 +39,7 @@ export const isCameraBody = (item: InventoryItem | undefined): item is Inventory
     ];
     if (accessorySubcategoryKeywords.some(keyword => subcategory.includes(keyword))) return false;
 
-    if (subcategory === "bodies" || subcategory.includes("body")) return true;
+    if (subcategory === "generic" || subcategory === "bodies" || subcategory.includes("body")) return true;
     if (item.id && item.id.toLowerCase().includes("body")) return true;
 
     const cameraSubcategoryKeywords = [

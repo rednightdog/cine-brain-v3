@@ -13,7 +13,7 @@ export type RecordingDurationEstimate = {
     capacityGb: number;
     dataRateMbps: number;
     minutes: number;
-    source: "catalog" | "estimate";
+    source: "catalog" | "custom" | "estimate";
     setupLabel: string;
 };
 
@@ -22,8 +22,9 @@ export function estimateRecordingDuration(input: RecordingDurationInput): Record
     if (!capacityGb) return null;
 
     const config = parseCameraConfig(input.cameraConfigJson);
+    const customDataRate = parseCustomDataRateMbps(config.dataRateMbps);
     const catalogDataRate = findCatalogDataRateMbps(input.cameraRecordingFormats, config);
-    const dataRate = catalogDataRate || estimateDataRateMbps(config);
+    const dataRate = customDataRate || catalogDataRate || estimateDataRateMbps(config);
     if (!dataRate) return null;
 
     const quantity = Math.max(1, input.mediaQuantity || 1);
@@ -34,7 +35,7 @@ export function estimateRecordingDuration(input: RecordingDurationInput): Record
         capacityGb: totalCapacityGb,
         dataRateMbps: dataRate,
         minutes,
-        source: catalogDataRate ? "catalog" : "estimate",
+        source: customDataRate ? "custom" : catalogDataRate ? "catalog" : "estimate",
         setupLabel: buildSetupLabel(config),
     };
 }
@@ -44,7 +45,7 @@ export function formatRecordingDurationEstimate(estimate: RecordingDurationEstim
     const duration = roundedMinutes >= 90
         ? `${Math.floor(roundedMinutes / 60)}h ${roundedMinutes % 60}m`
         : `${roundedMinutes} min`;
-    const sourceLabel = estimate.source === "estimate" ? "approx" : "catalog";
+    const sourceLabel = estimate.source === "estimate" ? "approx" : estimate.source;
     return `${formatCapacityGb(estimate.capacityGb)} -> ${duration} ${sourceLabel} @ ${estimate.setupLabel} (${Math.round(estimate.dataRateMbps)} Mbps)`;
 }
 
@@ -133,6 +134,19 @@ function parseDataRateMbps(text: string): number | null {
     if (unit === "gb/s") return value * 8000;
     if (unit === "mb/s") return value * 8;
     return null;
+}
+
+function parseCustomDataRateMbps(value: number | string | undefined): number | null {
+    if (typeof value === "number") {
+        return Number.isFinite(value) && value > 0 ? value : null;
+    }
+    if (typeof value !== "string" || value.trim().length === 0) return null;
+
+    const withUnit = parseDataRateMbps(value);
+    if (withUnit) return withUnit;
+
+    const numeric = Number(value.trim().replace(",", "."));
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
 }
 
 function scoreFormatMatch(text: string, config: CameraRecordingConfig): number {

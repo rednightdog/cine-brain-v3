@@ -48,6 +48,16 @@ describe("isCameraBody", () => {
         expect(isCameraBody(ronin)).toBe(true);
     });
 
+    it("returns true for generic camera entries", () => {
+        const genericCamera = makeItem({
+            category: "CAM",
+            subcategory: "Generic",
+            name: "Custom Camera Body",
+        });
+
+        expect(isCameraBody(genericCamera)).toBe(true);
+    });
+
     it("does not treat camera-category accessories as camera bodies", () => {
         const media = makeItem({
             category: "CAM",

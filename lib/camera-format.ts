@@ -8,6 +8,7 @@ export type CameraRecordingConfig = {
     resolutionK?: string;
     aspectRatio?: string;
     codec?: string;
+    dataRateMbps?: number | string;
     recordingFormat?: string;
 };
 

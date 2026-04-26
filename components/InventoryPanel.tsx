@@ -53,38 +53,64 @@ function CameraSetupControls({
         });
     };
 
+    const updateDataRate = (value: string) => {
+        const trimmed = value.trim();
+        const numeric = Number(trimmed.replace(",", "."));
+        onUpdateItem(entry.id, {
+            configJson: stringifyCameraConfig({
+                ...config,
+                dataRateMbps: trimmed && Number.isFinite(numeric) && numeric > 0 ? numeric : undefined,
+            })
+        });
+    };
+
     return (
-        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-            <CameraSetupSelect
-                label="Sensor"
-                value={config.sensorMode || ""}
-                options={CAMERA_SENSOR_OPTIONS}
-                onChange={(value) => updateConfig("sensorMode", value)}
-            />
-            <CameraSetupSelect
-                label="Gate"
-                value={config.gateMode || ""}
-                options={CAMERA_GATE_OPTIONS}
-                onChange={(value) => updateConfig("gateMode", value)}
-            />
-            <CameraSetupSelect
-                label="K"
-                value={config.resolutionK || ""}
-                options={CAMERA_RESOLUTION_OPTIONS}
-                onChange={(value) => updateConfig("resolutionK", value)}
-            />
-            <CameraSetupSelect
-                label="Frame"
-                value={config.aspectRatio || ""}
-                options={CAMERA_ASPECT_OPTIONS}
-                onChange={(value) => updateConfig("aspectRatio", value)}
-            />
-            <CameraSetupSelect
-                label="Codec"
-                value={config.codec || ""}
-                options={CAMERA_CODEC_OPTIONS}
-                onChange={(value) => updateConfig("codec", value)}
-            />
+        <div className="mt-2 rounded-lg border border-dashed border-[#D1D1D6] bg-[#FBFBFD] p-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#6E6E73]">
+                    Custom / Approx Recording Setup
+                </span>
+                <span className="text-[9px] font-medium text-[#8E8E93]">
+                    Use this for generic or unverified camera entries.
+                </span>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-6">
+                <CameraSetupSelect
+                    label="Sensor"
+                    value={config.sensorMode || ""}
+                    options={CAMERA_SENSOR_OPTIONS}
+                    onChange={(value) => updateConfig("sensorMode", value)}
+                />
+                <CameraSetupSelect
+                    label="Gate"
+                    value={config.gateMode || ""}
+                    options={CAMERA_GATE_OPTIONS}
+                    onChange={(value) => updateConfig("gateMode", value)}
+                />
+                <CameraSetupSelect
+                    label="K"
+                    value={config.resolutionK || ""}
+                    options={CAMERA_RESOLUTION_OPTIONS}
+                    onChange={(value) => updateConfig("resolutionK", value)}
+                />
+                <CameraSetupSelect
+                    label="Frame"
+                    value={config.aspectRatio || ""}
+                    options={CAMERA_ASPECT_OPTIONS}
+                    onChange={(value) => updateConfig("aspectRatio", value)}
+                />
+                <CameraSetupSelect
+                    label="Codec"
+                    value={config.codec || ""}
+                    options={CAMERA_CODEC_OPTIONS}
+                    onChange={(value) => updateConfig("codec", value)}
+                />
+                <CameraSetupInput
+                    label="Mbps"
+                    value={config.dataRateMbps ? String(config.dataRateMbps) : ""}
+                    onChange={updateDataRate}
+                />
+            </div>
         </div>
     );
 }
@@ -113,6 +139,31 @@ function CameraSetupSelect({
                     <option key={option} value={option}>{option}</option>
                 ))}
             </select>
+        </label>
+    );
+}
+
+function CameraSetupInput({
+    label,
+    value,
+    onChange
+}: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+}) {
+    return (
+        <label className="min-w-0 rounded-md border border-[#E5E5EA] bg-[#F9F9FB] px-2 py-1">
+            <span className="block text-[8px] font-bold uppercase text-[#8E8E93]">{label}</span>
+            <input
+                type="number"
+                min="1"
+                inputMode="numeric"
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                placeholder="Auto"
+                className="mt-0.5 w-full bg-transparent text-[10px] font-bold text-[#1C1C1E] outline-none placeholder:text-[#C7C7CC]"
+            />
         </label>
     );
 }

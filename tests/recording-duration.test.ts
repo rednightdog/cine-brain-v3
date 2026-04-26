@@ -52,4 +52,23 @@ describe("recording duration estimates", () => {
         expect(Math.round(estimate?.minutes || 0)).toBe(167);
         expect(formatRecordingDurationEstimate(estimate!)).toContain("1TB -> 2h 47m catalog");
     });
+
+    it("uses custom data rate for generic camera setups", () => {
+        const estimate = estimateRecordingDuration({
+            cameraConfigJson: JSON.stringify({
+                resolutionK: "8K",
+                gateMode: "Open Gate",
+                aspectRatio: "16:9",
+                codec: "ProRes 422 HQ",
+                dataRateMbps: 1000
+            }),
+            mediaName: "Generic SSD 1TB"
+        });
+
+        expect(estimate).not.toBeNull();
+        expect(estimate?.source).toBe("custom");
+        expect(estimate?.dataRateMbps).toBe(1000);
+        expect(Math.round(estimate?.minutes || 0)).toBe(133);
+        expect(formatRecordingDurationEstimate(estimate!)).toContain("1TB -> 2h 13m custom");
+    });
 });
