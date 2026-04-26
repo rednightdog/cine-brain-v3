@@ -130,6 +130,16 @@ Raporda ayrıca şunlar görünür:
 - `preview.unchanged`
 - `preview.changedFieldFrequency`
 
+Ilk 20 oncelikli CAM/LNS guncelleme listesini almak icin:
+
+```bash
+npm run db:priority:cam-lens
+```
+
+Cikti:
+
+`/Users/arasdemiray/.gemini/antigravity/scratch/cine-brain-pro/reports/cam-lens-priority-updates.csv`
+
 Not: Import scripti `,`, `;` ve `TAB` ayraçlarını otomatik algılar.
 
 ### D) Tek Komut Güvenli Sync (önerilen günlük akış)
