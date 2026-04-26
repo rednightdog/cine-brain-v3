@@ -47,6 +47,7 @@ export type InventoryItem = {
     resolution?: string | null;
     dynamic_range?: string | null;
     native_iso?: string | null;
+    recordingFormats?: string | null;
     focal_length?: string | null;
     aperture?: string | null;
     weight_kg?: number | null;

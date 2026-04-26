@@ -12,6 +12,7 @@ import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningTooltip } from './ui/WarningBadge';
 import { getCompatibleAccessories } from '@/lib/camera-accessories';
 import { getProTips } from '@/lib/pro-tips';
+import { parseCameraConfig, stringifyCameraConfig } from '@/lib/camera-format';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { SmartSuggestionModal } from './SmartSuggestionModal';
 
@@ -26,6 +27,87 @@ const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
 
 function cn(...inputs: (string | undefined | null | false)[]) {
     return twMerge(clsx(inputs));
+}
+
+const CAMERA_SENSOR_OPTIONS = ["S16", "S35", "FF", "LF"];
+const CAMERA_RESOLUTION_OPTIONS = ["2K", "3.2K", "4K", "4.6K", "5.8K", "6K", "8K", "12K"];
+const CAMERA_ASPECT_OPTIONS = ["16:9", "17:9", "3:2 Open Gate", "4:3", "6:5 Anamorphic", "2.39:1"];
+const CAMERA_CODEC_OPTIONS = ["ARRIRAW", "ProRes 4444 XQ", "ProRes 422 HQ", "X-OCN XT", "X-OCN ST", "REDCODE RAW", "BRAW", "XAVC-I", "ARRICORE"];
+
+function CameraSetupControls({
+    entry,
+    onUpdateItem
+}: {
+    entry: InventoryEntry;
+    onUpdateItem: (id: string, updates: any) => void;
+}) {
+    const config = parseCameraConfig(entry.configJson);
+
+    const updateConfig = (key: "sensorMode" | "resolutionK" | "aspectRatio" | "codec", value: string) => {
+        onUpdateItem(entry.id, {
+            configJson: stringifyCameraConfig({
+                ...config,
+                [key]: value || undefined,
+            })
+        });
+    };
+
+    return (
+        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <CameraSetupSelect
+                label="Sensor"
+                value={config.sensorMode || ""}
+                options={CAMERA_SENSOR_OPTIONS}
+                onChange={(value) => updateConfig("sensorMode", value)}
+            />
+            <CameraSetupSelect
+                label="K"
+                value={config.resolutionK || ""}
+                options={CAMERA_RESOLUTION_OPTIONS}
+                onChange={(value) => updateConfig("resolutionK", value)}
+            />
+            <CameraSetupSelect
+                label="Aspect"
+                value={config.aspectRatio || ""}
+                options={CAMERA_ASPECT_OPTIONS}
+                onChange={(value) => updateConfig("aspectRatio", value)}
+            />
+            <CameraSetupSelect
+                label="Codec"
+                value={config.codec || ""}
+                options={CAMERA_CODEC_OPTIONS}
+                onChange={(value) => updateConfig("codec", value)}
+            />
+        </div>
+    );
+}
+
+function CameraSetupSelect({
+    label,
+    value,
+    options,
+    onChange
+}: {
+    label: string;
+    value: string;
+    options: string[];
+    onChange: (value: string) => void;
+}) {
+    return (
+        <label className="min-w-0 rounded-md border border-[#E5E5EA] bg-[#F9F9FB] px-2 py-1">
+            <span className="block text-[8px] font-bold uppercase text-[#8E8E93]">{label}</span>
+            <select
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                className="mt-0.5 w-full bg-transparent text-[10px] font-bold text-[#1C1C1E] outline-none"
+            >
+                <option value="">Auto</option>
+                {options.map(option => (
+                    <option key={option} value={option}>{option}</option>
+                ))}
+            </select>
+        </label>
+    );
 }
 
 interface InventoryPanelProps {
@@ -685,6 +767,13 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                             </span>
                                                         )}
                                                     </div>
+
+                                                    {item.category === 'CAM' && (
+                                                        <CameraSetupControls
+                                                            entry={entry}
+                                                            onUpdateItem={onUpdateItem}
+                                                        />
+                                                    )}
 
                                                     {/* Compatibility Warnings (Redesigned with Dismiss) */}
                                                     {(() => {

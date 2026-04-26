@@ -1,6 +1,7 @@
 import type { InventoryEntry, InventoryItem } from "@/components/CineBrainInterface";
 import { validateHardwareCompatibility, validateDependencies } from "./hardware-validator";
 import { findCompatibleAdapters, Adapter } from "./adapters";
+import { getCameraRecordingProfile, normalizeSensorCoverage } from "./camera-format";
 
 export interface CompatibilityWarning {
     itemId?: string;
@@ -32,15 +33,6 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
         const item = catalog.find(c => c.id === e.equipmentId);
         return item?.category === 'CAM';
     });
-
-    const normalizeSensor = (s: string | null | undefined) => {
-        if (!s) return '';
-        const lower = s.toLowerCase();
-        if (lower.includes('lf') || lower.includes('large format')) return 'LF';
-        if (lower.includes('full') || lower.includes('ff')) return 'FF';
-        if (lower.includes('s35') || lower.includes('super 35')) return 'S35';
-        return s;
-    };
 
     inventory.forEach(entry => {
         const item = catalog.find(c => c.id === entry.equipmentId);
@@ -99,18 +91,35 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
                 }
             }
 
-            const cameraSensor = normalizeSensor(hostItem.sensor_size || hostItem.subcategory);
-            const lensCoverage = normalizeSensor(item.coverage);
+            const cameraProfile = getCameraRecordingProfile(hostItem, hostCam);
+            const cameraSensor = cameraProfile.sensorCoverage;
+            const lensCoverage = normalizeSensorCoverage(item.coverage);
+            const lensImageCircle = getLensImageCircleMm(item, safeParseSpecs(item.specs_json));
 
             if (cameraSensor && lensCoverage) {
-                const sensorHierarchy = { 'S35': 1, 'FF': 2, 'LF': 3 };
+                const sensorHierarchy = { 'S16': 0, 'S35': 1, 'FF': 2, 'LF': 3 };
                 const cameraLevel = sensorHierarchy[cameraSensor as keyof typeof sensorHierarchy] || 0;
                 const lensLevel = sensorHierarchy[lensCoverage as keyof typeof sensorHierarchy] || 0;
+                const setupSuffix = cameraProfile.summary ? ` (${cameraProfile.summary})` : "";
+                let hasCoverageWarning = false;
 
-                if (lensLevel < cameraLevel) {
+                if (
+                    lensImageCircle &&
+                    cameraProfile.requiredImageCircleMm &&
+                    lensImageCircle + 0.2 < cameraProfile.requiredImageCircleMm
+                ) {
+                    hasCoverageWarning = true;
                     warnings.push({
                         itemId: entry.id,
-                        message: `Coverage Warning: ${item.name} (${lensCoverage}) may vignette on ${hostItem.name} (${cameraSensor} sensor)`,
+                        message: `Coverage Warning: ${item.name} image circle (${lensImageCircle}mm) is below ${hostItem.name}${setupSuffix} requirement (~${cameraProfile.requiredImageCircleMm.toFixed(1)}mm).`,
+                        type: 'SENSOR'
+                    });
+                }
+
+                if (!hasCoverageWarning && lensLevel < cameraLevel) {
+                    warnings.push({
+                        itemId: entry.id,
+                        message: `Coverage Warning: ${item.name} (${lensCoverage}) may vignette on ${hostItem.name}${setupSuffix} (${cameraSensor} sensor)`,
                         type: 'SENSOR'
                     });
                 }
@@ -119,12 +128,18 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
 
         // 2. Hardware Validation (Power, Media, Codecs)
         if (hostItem && hostItem.id !== item.id) {
+            const cameraProfile = getCameraRecordingProfile(hostItem, hostCam);
+            const hostSpecs = safeParseSpecs(hostItem.specs_json);
+            if (cameraProfile.codec) {
+                hostSpecs.compatible_codecs = [cameraProfile.codec];
+            }
+
             const hwWarnings = validateHardwareCompatibility(
                 {
                     brand: hostItem.brand || '',
                     model: hostItem.model || '',
                     category: hostItem.category,
-                    specs: safeParseSpecs(hostItem.specs_json)
+                    specs: hostSpecs
                 },
                 {
                     brand: item.brand || '',
@@ -159,4 +174,17 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
     });
 
     return warnings;
+}
+
+function getLensImageCircleMm(item: InventoryItem, specs: Record<string, unknown>): number | undefined {
+    if (typeof item.image_circle_mm === "number") return item.image_circle_mm;
+
+    const raw = specs.image_circle_mm || specs.imageCircle || specs.image_circle;
+    if (typeof raw === "number") return raw;
+    if (typeof raw === "string") {
+        const parsed = parseFloat(raw.replace(",", "."));
+        return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    return undefined;
 }

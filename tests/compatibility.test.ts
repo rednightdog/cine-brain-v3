@@ -113,6 +113,69 @@ describe("validateCompatibility", () => {
         expect(warnings.some((w) => w.type === "SENSOR" && w.message.includes("vignette"))).toBe(true);
     });
 
+    it("uses configured camera sensor mode for lens coverage checks", () => {
+        const cam = cameraItem({ sensor_size: "Full Frame" });
+        const lens = lensItem({ coverage: "S35", mount: "PL" });
+
+        const warnings = validateCompatibility(
+            [
+                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "S35", resolutionK: "4K", aspectRatio: "16:9", codec: "ProRes 4444 XQ" }) }),
+                entryFor(lens),
+            ],
+            [cam, lens]
+        );
+
+        expect(warnings.some((w) => w.type === "SENSOR")).toBe(false);
+    });
+
+    it("includes configured recording setup in coverage warnings", () => {
+        const cam = cameraItem({ sensor_size: "Full Frame" });
+        const lens = lensItem({ coverage: "FF", mount: "PL" });
+
+        const warnings = validateCompatibility(
+            [
+                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "LF", resolutionK: "8K", aspectRatio: "3:2 Open Gate", codec: "ARRIRAW" }) }),
+                entryFor(lens),
+            ],
+            [cam, lens]
+        );
+
+        const warning = warnings.find((w) => w.type === "SENSOR");
+        expect(warning?.message).toContain("8K / 3:2 Open Gate / ARRIRAW / LF mode");
+    });
+
+    it("uses aspect ratio and image circle for more precise coverage checks", () => {
+        const cam = cameraItem({ sensor_size: "Full Frame" });
+        const lens = lensItem({ coverage: "FF", mount: "PL", image_circle_mm: 31 });
+
+        const warnings = validateCompatibility(
+            [
+                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "FF", aspectRatio: "16:9" }) }),
+                entryFor(lens),
+            ],
+            [cam, lens]
+        );
+
+        const warning = warnings.find((w) => w.type === "SENSOR");
+        expect(warning?.message).toContain("image circle (31mm)");
+        expect(warning?.message).toContain("requirement");
+    });
+
+    it("does not warn when selected aspect crop fits the lens image circle", () => {
+        const cam = cameraItem({ sensor_size: "Super 35" });
+        const lens = lensItem({ coverage: "S35", mount: "PL", image_circle_mm: 31 });
+
+        const warnings = validateCompatibility(
+            [
+                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "S35", aspectRatio: "6:5 Anamorphic" }) }),
+                entryFor(lens),
+            ],
+            [cam, lens]
+        );
+
+        expect(warnings.some((w) => w.type === "SENSOR")).toBe(false);
+    });
+
     it("includes hardware power warnings from integrated validator", () => {
         const cam = cameraItem({
             specs_json: JSON.stringify({
