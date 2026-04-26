@@ -643,6 +643,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                                     onAddProjectOnlyCustomItem={handleAddProjectOnlyCustomItem}
                                     onUpdateItem={handleUpdateEntry}
                                     onQtyChange={handleQtyChange}
+                                    onRemoveItem={handleDeleteEntry}
                                     onOpenAdmin={() => setIsAdminCatalogOpen(true)}
                                 />
                             </div>

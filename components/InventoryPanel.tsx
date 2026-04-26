@@ -319,6 +319,7 @@ interface InventoryPanelProps {
     }, targetCam?: string) => Promise<{ success: boolean; error?: string }> | void;
     onUpdateItem: (id: string, updates: any) => void; // Used for config
     onQtyChange: (entryIdx: number, delta: number) => void;
+    onRemoveItem: (id: string) => void;
     onOpenAdmin?: () => void;
 }
 
@@ -331,6 +332,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
         onAddProjectOnlyCustomItem,
         onUpdateItem,
         onQtyChange,
+        onRemoveItem,
         onOpenAdmin
     } = props;
 
@@ -801,6 +803,23 @@ export function InventoryPanel(props: InventoryPanelProps) {
         });
     };
 
+    const handleRemoveFromProjectList = (entry: InventoryEntry) => {
+        const label = entry.name || entry.model || "this item";
+        const ok = window.confirm(
+            `Remove "${label}" from this project list only?\n\nCatalog/equipment data will not be deleted.`
+        );
+        if (!ok) return;
+        onRemoveItem(entry.id);
+    };
+
+    const handleRemoveGroupFromProjectList = (entries: InventoryEntry[], label: string) => {
+        const ok = window.confirm(
+            `Remove "${label}" from this project list only?\n\n${entries.length} list item${entries.length === 1 ? "" : "s"} will be removed. Catalog/equipment data will not be deleted.`
+        );
+        if (!ok) return;
+        entries.forEach(entry => onRemoveItem(entry.id));
+    };
+
     const handleDeleteCustom = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!confirm("Are you sure you want to delete this custom item from the global catalog?")) return;
@@ -946,7 +965,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                                 return (
                                     <div key={`${assignedCam}-${brand}-${series}`} className="group flex flex-col py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7]">
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-start justify-between gap-3">
                                             <div className="flex items-center gap-4 overflow-hidden">
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleToggleCam(entries[0]); }}
@@ -973,7 +992,6 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                             const mm = i.name.match(/\d+mm/i)?.[0];
                                                             const ap = i.aperture || i.name.match(/[TF]\d+(\.\d+)?/i)?.[0];
                                                             const isDiff = ap && ap !== primaryAperture;
-                                                            const masterIdx = inventory.findIndex(inv => inv.id === entry.id);
                                                             const itemWarnings = compatibilityWarnings.filter(w => w.itemId === entry.id && !dismissedWarnings.has(w.itemId + w.type));
                                                             const hasWarning = itemWarnings.length > 0;
 
@@ -994,13 +1012,14 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
-                                                                                onQtyChange(masterIdx, -entry.quantity);
+                                                                                handleRemoveFromProjectList(entry);
                                                                             }}
                                                                             className={cn(
                                                                                 "transition-colors ml-0.5",
                                                                                 hasWarning ? "text-red-400 hover:text-red-700" : "text-[#8E8E93] hover:text-red-500"
                                                                             )}
-                                                                            title="Remove from set"
+                                                                            title="Remove this focal length from project only"
+                                                                            aria-label={`Remove ${mm || entry.name} from project only`}
                                                                         >
                                                                             <X className="w-2.5 h-2.5" />
                                                                         </button>
@@ -1011,6 +1030,17 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                     </div>
                                                 </div>
                                             </div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleRemoveGroupFromProjectList(entries, groupTitle);
+                                                }}
+                                                className="mt-0.5 shrink-0 rounded-full p-2 text-[#C7C7CC] transition-all hover:bg-red-50 hover:text-red-500"
+                                                title="Remove full lens set from project only"
+                                                aria-label={`Remove ${groupTitle} from project only`}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
                                         </div>
                                     </div>
                                 );
@@ -1264,10 +1294,12 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                             </div>
 
                                             <button
-                                                onClick={() => onQtyChange(masterIdx, -entry.quantity)}
+                                                onClick={() => handleRemoveFromProjectList(entry)}
                                                 className="p-2 hover:bg-red-50 rounded-full transition-all text-[#C7C7CC] hover:text-red-500"
+                                                title="Remove from project list only"
+                                                aria-label={`Remove ${item.name} from project only`}
                                             >
-                                                <X className="w-4 h-4" />
+                                                <Trash2 className="w-4 h-4" />
                                             </button>
                                         </div>
                                     </div>
