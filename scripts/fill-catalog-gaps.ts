@@ -258,6 +258,219 @@ async function fillCameraTechnicalData() {
     return { scanned: cameras.length, updated: ops.length };
 }
 
+function parseJsonValue(raw: string | null): unknown | null {
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw) as unknown;
+    } catch {
+        return null;
+    }
+}
+
+type TechnicalPair = {
+    label: string;
+    value: string;
+};
+
+function normalizeLabel(label: string): string {
+    return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function pushPair(target: TechnicalPair[], label: unknown, value: unknown) {
+    if (typeof label !== "string") return;
+    const text = value == null ? "" : String(value).trim();
+    if (!text) return;
+    target.push({ label: normalizeLabel(label), value: text });
+}
+
+function extractTechnicalPairs(raw: string | null): TechnicalPair[] {
+    const parsed = parseJsonValue(raw);
+    const pairs: TechnicalPair[] = [];
+    if (!parsed) return pairs;
+
+    if (Array.isArray(parsed)) {
+        for (const section of parsed) {
+            if (!section || typeof section !== "object") continue;
+            const s = section as Record<string, unknown>;
+            if (Array.isArray(s.items)) {
+                for (const entry of s.items) {
+                    if (!entry || typeof entry !== "object") continue;
+                    const e = entry as Record<string, unknown>;
+                    pushPair(pairs, e.label, e.value);
+                }
+            }
+            for (const [k, v] of Object.entries(s)) {
+                if (k === "items" || k === "title") continue;
+                pushPair(pairs, k, v);
+            }
+        }
+        return pairs;
+    }
+
+    if (typeof parsed === "object") {
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+            pushPair(pairs, k, v);
+        }
+    }
+
+    return pairs;
+}
+
+function parseDynamicRangeFromText(text: string): string | null {
+    const match = /(\d+(?:\.\d+)?\+?)\s*(?:stop|stops)\b/i.exec(text);
+    if (!match) return null;
+    return `${match[1]} stops`;
+}
+
+function parseIsoFromText(text: string): string | null {
+    const isoMatch = /(?:native|base)?\s*iso[^0-9]*(\d{2,6})/i.exec(text);
+    if (isoMatch) return isoMatch[1];
+    return null;
+}
+
+function extractDynamicRangeFromPairs(pairs: TechnicalPair[]): string | null {
+    for (const pair of pairs) {
+        if (!pair.label.includes("dynamic range")) continue;
+        const value = parseDynamicRangeFromText(pair.value);
+        if (value) return value;
+    }
+    for (const pair of pairs) {
+        if (!pair.value.toLowerCase().includes("dynamic range")) continue;
+        const value = parseDynamicRangeFromText(pair.value);
+        if (value) return value;
+    }
+    return null;
+}
+
+function extractNativeIsoFromPairs(pairs: TechnicalPair[]): string | null {
+    for (const pair of pairs) {
+        if (!pair.label.includes("iso")) continue;
+        const value = parseIsoFromText(`${pair.label} ${pair.value}`);
+        if (value) return value;
+    }
+    return null;
+}
+
+function extractPowerFromPairs(pairs: TechnicalPair[]): number | null {
+    const candidates: number[] = [];
+    for (const pair of pairs) {
+        const text = `${pair.label} ${pair.value}`.toLowerCase();
+        if (!text.includes("power") && !text.includes("watt") && !/\bw\b/.test(text)) continue;
+        candidates.push(...parseWattsFromString(pair.value));
+    }
+    if (candidates.length === 0) return null;
+    return Math.max(...candidates);
+}
+
+function extractDynamicRangeCandidates(value: unknown, keyHint = ""): string[] {
+    if (value == null) return [];
+    const key = keyHint.toLowerCase();
+
+    if (typeof value === "number") {
+        if (key.includes("dynamic") || key.includes("range")) {
+            return [`${value} stops`];
+        }
+        return [];
+    }
+
+    if (typeof value === "string") {
+        const shouldTry = key.includes("dynamic") || key.includes("range") || value.toLowerCase().includes("dynamic");
+        if (!shouldTry) return [];
+        const parsed = parseDynamicRangeFromText(value);
+        return parsed ? [parsed] : [];
+    }
+
+    if (Array.isArray(value)) {
+        return value.flatMap((item) => extractDynamicRangeCandidates(item, keyHint));
+    }
+
+    if (typeof value === "object") {
+        return Object.entries(value as Record<string, unknown>).flatMap(([k, v]) =>
+            extractDynamicRangeCandidates(v, k)
+        );
+    }
+
+    return [];
+}
+
+function extractIsoCandidates(value: unknown, keyHint = ""): string[] {
+    if (value == null) return [];
+    const key = keyHint.toLowerCase();
+
+    if (typeof value === "number") {
+        if (key.includes("iso")) return [String(Math.round(value))];
+        return [];
+    }
+
+    if (typeof value === "string") {
+        const shouldTry = key.includes("iso") || value.toLowerCase().includes("iso");
+        if (!shouldTry) return [];
+        const parsed = parseIsoFromText(value);
+        return parsed ? [parsed] : [];
+    }
+
+    if (Array.isArray(value)) {
+        return value.flatMap((item) => extractIsoCandidates(item, keyHint));
+    }
+
+    if (typeof value === "object") {
+        return Object.entries(value as Record<string, unknown>).flatMap(([k, v]) =>
+            extractIsoCandidates(v, k)
+        );
+    }
+
+    return [];
+}
+
+function extractDynamicRangeFromSpecs(specsJson: string | null): string | null {
+    const parsed = parseJsonValue(specsJson);
+    if (!parsed) return null;
+    const candidates = extractDynamicRangeCandidates(parsed);
+    return candidates[0] || null;
+}
+
+function extractIsoFromSpecs(specsJson: string | null): string | null {
+    const parsed = parseJsonValue(specsJson);
+    if (!parsed) return null;
+    const candidates = extractIsoCandidates(parsed);
+    return candidates[0] || null;
+}
+
+function extractDynamicRangeFromLabMetrics(raw: string | null): string | null {
+    const parsed = parseJsonValue(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const obj = parsed as Record<string, unknown>;
+    const dynamic = obj.dynamic_range_stops;
+    if (typeof dynamic === "number" && Number.isFinite(dynamic)) {
+        return `${dynamic} stops`;
+    }
+    if (dynamic && typeof dynamic === "object" && !Array.isArray(dynamic)) {
+        const d = dynamic as Record<string, unknown>;
+        const snr2 = d.snr_2;
+        const snr1 = d.snr_1;
+        if (typeof snr2 === "number" && Number.isFinite(snr2)) return `${snr2} stops`;
+        if (typeof snr1 === "number" && Number.isFinite(snr1)) return `${snr1} stops`;
+    }
+    return null;
+}
+
+function extractNativeIsoFromLabMetrics(raw: string | null): string | null {
+    const parsed = parseJsonValue(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const obj = parsed as Record<string, unknown>;
+    const keys = ["base_iso", "native_iso", "iso"];
+    for (const key of keys) {
+        const value = obj[key];
+        if (typeof value === "number" && Number.isFinite(value)) return String(Math.round(value));
+        if (typeof value === "string") {
+            const parsedIso = parseIsoFromText(value);
+            if (parsedIso) return parsedIso;
+            if (/^\d{2,6}$/.test(value.trim())) return value.trim();
+        }
+    }
+    return null;
+}
+
 async function fillCameraRecordingFormats() {
     const cameras = await prisma.equipmentItem.findMany({
         where: {
@@ -287,6 +500,106 @@ async function fillCameraRecordingFormats() {
     await executeInBatches(ops);
 
     return { scanned: cameras.length, updated: ops.length };
+}
+
+async function fillCameraCoreMetadata() {
+    const cameras = await prisma.equipmentItem.findMany({
+        where: {
+            category: "CAM",
+            status: "APPROVED",
+            isPrivate: false,
+            OR: [
+                { dynamic_range: null },
+                { native_iso: null },
+                { power_draw_w: null },
+                { labMetrics: null },
+            ],
+        },
+        select: {
+            id: true,
+            description: true,
+            dynamic_range: true,
+            native_iso: true,
+            power_draw_w: true,
+            technicalData: true,
+            labMetrics: true,
+            specs_json: true,
+        },
+    });
+
+    let dynamicUpdated = 0;
+    let isoUpdated = 0;
+    let powerUpdated = 0;
+    let labUpdated = 0;
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+
+    for (const item of cameras) {
+        const pairs = extractTechnicalPairs(item.technicalData);
+        const inferredDynamic =
+            extractDynamicRangeFromPairs(pairs) ||
+            extractDynamicRangeFromLabMetrics(item.labMetrics) ||
+            extractDynamicRangeFromSpecs(item.specs_json) ||
+            parseDynamicRangeFromText(item.description);
+        const inferredIso =
+            extractNativeIsoFromPairs(pairs) ||
+            extractNativeIsoFromLabMetrics(item.labMetrics) ||
+            extractIsoFromSpecs(item.specs_json);
+        const inferredPower = extractPowerFromPairs(pairs) || extractPowerDrawWatts(item.specs_json);
+
+        const nextDynamic = item.dynamic_range || inferredDynamic || null;
+        const nextIso = item.native_iso || inferredIso || null;
+        const nextPower = item.power_draw_w ?? inferredPower ?? null;
+
+        let nextLabMetrics = item.labMetrics;
+        if (!item.labMetrics && (nextDynamic || nextIso)) {
+            const payload: Record<string, unknown> = {
+                source: "inferred_from_existing_fields",
+            };
+            if (nextDynamic) payload.dynamic_range = nextDynamic;
+            if (nextIso) {
+                const n = Number(nextIso);
+                payload.base_iso = Number.isFinite(n) ? Math.round(n) : nextIso;
+            }
+            nextLabMetrics = JSON.stringify(payload);
+            labUpdated += 1;
+        }
+
+        const data: Record<string, unknown> = {};
+        if (!item.dynamic_range && nextDynamic) {
+            data.dynamic_range = nextDynamic;
+            dynamicUpdated += 1;
+        }
+        if (!item.native_iso && nextIso) {
+            data.native_iso = nextIso;
+            isoUpdated += 1;
+        }
+        if (item.power_draw_w == null && nextPower != null) {
+            data.power_draw_w = nextPower;
+            powerUpdated += 1;
+        }
+        if (!item.labMetrics && nextLabMetrics) {
+            data.labMetrics = nextLabMetrics;
+        }
+
+        if (Object.keys(data).length === 0) continue;
+        ops.push(
+            prisma.equipmentItem.update({
+                where: { id: item.id },
+                data,
+            })
+        );
+    }
+
+    await executeInBatches(ops);
+
+    return {
+        scanned: cameras.length,
+        updated: ops.length,
+        dynamicUpdated,
+        isoUpdated,
+        powerUpdated,
+        labUpdated,
+    };
 }
 
 async function fillLensTechnicalData() {
@@ -422,6 +735,7 @@ async function main() {
     const lensResult = await fillLensCoverage();
     const lensTypeResult = await fillLensType();
     const camRecordingResult = await fillCameraRecordingFormats();
+    const camCoreResult = await fillCameraCoreMetadata();
     const camTechResult = await fillCameraTechnicalData();
     const lensTechResult = await fillLensTechnicalData();
     const lightResult = await fillLightingPower();
@@ -435,6 +749,12 @@ async function main() {
     );
     console.log(
         `CAM recordingFormats: updated ${camRecordingResult.updated}/${camRecordingResult.scanned} records`
+    );
+    console.log(
+        `CAM core metadata: updated ${camCoreResult.updated}/${camCoreResult.scanned} records`
+    );
+    console.log(
+        `CAM core breakdown: dynamic_range=${camCoreResult.dynamicUpdated}, native_iso=${camCoreResult.isoUpdated}, power_draw_w=${camCoreResult.powerUpdated}, labMetrics=${camCoreResult.labUpdated}`
     );
     console.log(
         `CAM technicalData: updated ${camTechResult.updated}/${camTechResult.scanned} records`

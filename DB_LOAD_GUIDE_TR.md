@@ -293,7 +293,7 @@ npm run db:pipeline:quality
 ```
 
 Bu pipeline:
-- `db:fill:gaps`: coverage, lens_type, technicalData ve power_draw gibi doldurulabilir boşlukları tamamlar.
+- `db:fill:gaps`: coverage, lens_type, technicalData, power_draw ve kamera için dynamic_range/native_iso/labMetrics gibi doldurulabilir boşlukları tamamlar.
 - `db:validate:contract:cam-lens`: kamera/lens için kritik alan kontratını denetler.
 
 Detay rapor:
