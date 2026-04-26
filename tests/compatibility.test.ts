@@ -134,14 +134,14 @@ describe("validateCompatibility", () => {
 
         const warnings = validateCompatibility(
             [
-                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "LF", resolutionK: "8K", aspectRatio: "3:2 Open Gate", codec: "ARRIRAW" }) }),
+                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "LF", gateMode: "Open Gate", resolutionK: "8K", aspectRatio: "3:2", codec: "ARRIRAW" }) }),
                 entryFor(lens),
             ],
             [cam, lens]
         );
 
         const warning = warnings.find((w) => w.type === "SENSOR");
-        expect(warning?.message).toContain("8K / 3:2 Open Gate / ARRIRAW / LF mode");
+        expect(warning?.message).toContain("8K / Open Gate / 3:2 frame / ARRIRAW / LF mode");
     });
 
     it("uses aspect ratio and image circle for more precise coverage checks", () => {
@@ -159,6 +159,37 @@ describe("validateCompatibility", () => {
         const warning = warnings.find((w) => w.type === "SENSOR");
         expect(warning?.message).toContain("image circle (31mm)");
         expect(warning?.message).toContain("requirement");
+    });
+
+    it("treats Open Gate as recorded sensor area even when framing is 16:9", () => {
+        const cam = cameraItem({ sensor_size: "Full Frame" });
+        const lens = lensItem({ coverage: "FF", mount: "PL", image_circle_mm: 42 });
+
+        const warnings = validateCompatibility(
+            [
+                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "FF", gateMode: "Open Gate", aspectRatio: "16:9" }) }),
+                entryFor(lens),
+            ],
+            [cam, lens]
+        );
+
+        const warning = warnings.find((w) => w.type === "SENSOR");
+        expect(warning?.message).toContain("Open Gate / 16:9 frame");
+    });
+
+    it("uses gate crop rather than frame crop when the gate is explicitly 16:9", () => {
+        const cam = cameraItem({ sensor_size: "Full Frame" });
+        const lens = lensItem({ coverage: "FF", mount: "PL", image_circle_mm: 42 });
+
+        const warnings = validateCompatibility(
+            [
+                entryFor(cam, { configJson: JSON.stringify({ sensorMode: "FF", gateMode: "16:9", aspectRatio: "16:9" }) }),
+                entryFor(lens),
+            ],
+            [cam, lens]
+        );
+
+        expect(warnings.some((w) => w.type === "SENSOR")).toBe(false);
     });
 
     it("does not warn when selected aspect crop fits the lens image circle", () => {

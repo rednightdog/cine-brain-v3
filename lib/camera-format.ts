@@ -4,6 +4,7 @@ export type CameraSensorCoverage = "S16" | "S35" | "FF" | "LF";
 
 export type CameraRecordingConfig = {
     sensorMode?: string;
+    gateMode?: string;
     resolutionK?: string;
     aspectRatio?: string;
     codec?: string;
@@ -12,6 +13,7 @@ export type CameraRecordingConfig = {
 
 export type CameraRecordingProfile = {
     sensorCoverage: CameraSensorCoverage | "";
+    gateMode?: string;
     resolutionK?: string;
     aspectRatio?: string;
     codec?: string;
@@ -59,19 +61,34 @@ export function getCameraRecordingProfile(
 
     const summary = [
         config.resolutionK,
-        config.aspectRatio,
+        config.gateMode,
+        config.aspectRatio ? `${config.aspectRatio} frame` : undefined,
         config.codec,
         sensorCoverage ? `${sensorCoverage} mode` : undefined,
     ].filter(Boolean).join(" / ");
 
     return {
         sensorCoverage,
+        gateMode: config.gateMode,
         resolutionK: config.resolutionK,
         aspectRatio: config.aspectRatio,
         codec: config.codec,
-        requiredImageCircleMm: getApproxSensorDiagonalMm(sensorCoverage, config.aspectRatio),
+        requiredImageCircleMm: getRequiredImageCircleMm(sensorCoverage, config.gateMode, config.aspectRatio),
         summary,
     };
+}
+
+export function getRequiredImageCircleMm(
+    sensorCoverage: CameraSensorCoverage | "",
+    gateMode?: string,
+    frameAspectRatio?: string
+): number | undefined {
+    const gate = gateMode?.toLowerCase() || "";
+    if (gate.includes("open gate") || gate.includes("full sensor")) {
+        return getApproxSensorDiagonalMm(sensorCoverage);
+    }
+
+    return getApproxSensorDiagonalMm(sensorCoverage, gateMode || frameAspectRatio);
 }
 
 export function getApproxSensorDiagonalMm(
@@ -120,6 +137,7 @@ function getBaseSensorDimensions(sensorCoverage: CameraSensorCoverage | "") {
 function parseAspectRatio(aspectRatio: string | undefined): number | undefined {
     if (!aspectRatio) return undefined;
     const normalized = aspectRatio.toLowerCase();
+    if (normalized.includes("open gate") || normalized.includes("full sensor")) return undefined;
     if (normalized.includes("16:9")) return 16 / 9;
     if (normalized.includes("17:9")) return 17 / 9;
     if (normalized.includes("3:2")) return 3 / 2;

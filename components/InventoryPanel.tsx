@@ -30,8 +30,9 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 }
 
 const CAMERA_SENSOR_OPTIONS = ["S16", "S35", "FF", "LF"];
+const CAMERA_GATE_OPTIONS = ["Open Gate", "Full Sensor", "16:9", "17:9", "4:3", "6:5 Anamorphic", "2.39:1"];
 const CAMERA_RESOLUTION_OPTIONS = ["2K", "3.2K", "4K", "4.6K", "5.8K", "6K", "8K", "12K"];
-const CAMERA_ASPECT_OPTIONS = ["16:9", "17:9", "3:2 Open Gate", "4:3", "6:5 Anamorphic", "2.39:1"];
+const CAMERA_ASPECT_OPTIONS = ["16:9", "17:9", "3:2", "4:3", "6:5 Anamorphic", "2.39:1"];
 const CAMERA_CODEC_OPTIONS = ["ARRIRAW", "ProRes 4444 XQ", "ProRes 422 HQ", "X-OCN XT", "X-OCN ST", "REDCODE RAW", "BRAW", "XAVC-I", "ARRICORE"];
 
 function CameraSetupControls({
@@ -43,7 +44,7 @@ function CameraSetupControls({
 }) {
     const config = parseCameraConfig(entry.configJson);
 
-    const updateConfig = (key: "sensorMode" | "resolutionK" | "aspectRatio" | "codec", value: string) => {
+    const updateConfig = (key: "sensorMode" | "gateMode" | "resolutionK" | "aspectRatio" | "codec", value: string) => {
         onUpdateItem(entry.id, {
             configJson: stringifyCameraConfig({
                 ...config,
@@ -53,12 +54,18 @@ function CameraSetupControls({
     };
 
     return (
-        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
             <CameraSetupSelect
                 label="Sensor"
                 value={config.sensorMode || ""}
                 options={CAMERA_SENSOR_OPTIONS}
                 onChange={(value) => updateConfig("sensorMode", value)}
+            />
+            <CameraSetupSelect
+                label="Gate"
+                value={config.gateMode || ""}
+                options={CAMERA_GATE_OPTIONS}
+                onChange={(value) => updateConfig("gateMode", value)}
             />
             <CameraSetupSelect
                 label="K"
@@ -67,7 +74,7 @@ function CameraSetupControls({
                 onChange={(value) => updateConfig("resolutionK", value)}
             />
             <CameraSetupSelect
-                label="Aspect"
+                label="Frame"
                 value={config.aspectRatio || ""}
                 options={CAMERA_ASPECT_OPTIONS}
                 onChange={(value) => updateConfig("aspectRatio", value)}
