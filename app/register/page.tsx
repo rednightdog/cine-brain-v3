@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { registerUserAction } from "@/app/actions";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { Camera, Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
 
@@ -42,6 +43,26 @@ export default function RegisterPage() {
                 {/* Form Card */}
                 <div className="bg-white rounded-3xl p-8 shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-[#E2E8F0]">
                     <h2 className="text-xl font-semibold mb-6 text-[#1A1A1A]">Join the community</h2>
+
+                    <button
+                        type="button"
+                        onClick={() => signIn("google", { callbackUrl: "/" })}
+                        className="mb-5 flex w-full items-center justify-center gap-3 rounded-xl border border-[#E2E8F0] bg-white py-4 font-bold text-[#1A1A1A] transition-all hover:bg-[#F8FAFC] active:scale-[0.98]"
+                    >
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-[#E2E8F0] text-sm font-black text-[#4285F4]">
+                            G
+                        </span>
+                        <span className="flex flex-col items-start leading-tight">
+                            <span>Sign in with Google</span>
+                            <span className="text-xs font-medium text-[#64748B]">Continue with Google</span>
+                        </span>
+                    </button>
+
+                    <div className="mb-5 flex items-center gap-4">
+                        <div className="h-px flex-1 bg-[#F1F5F9]" />
+                        <span className="text-xs font-bold uppercase text-[#94A3B8]">Or</span>
+                        <div className="h-px flex-1 bg-[#F1F5F9]" />
+                    </div>
 
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div className="space-y-2">

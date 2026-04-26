@@ -1,11 +1,17 @@
-'use client';
+"use client";
 
-import { ShieldCheck, ArrowRight } from 'lucide-react';
-import { signIn } from 'next-auth/react'; // Client side sign-in
-import { useRouter } from 'next/navigation';
+import { useState } from "react";
+import Link from "next/link";
+import { ShieldCheck, ArrowRight } from "lucide-react";
+import { signIn } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const message = searchParams.get("message");
+    const [error, setError] = useState("");
+
     return (
         <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
             {/* Background Ambience */}
@@ -26,10 +32,17 @@ export default function LoginPage() {
                 {/* Login Form */}
                 <div className="flex flex-col gap-3">
                     <button
-                        onClick={() => signIn('google', { callbackUrl: '/' })}
-                        className="h-12 bg-white text-black font-bold rounded-lg flex items-center justify-center hover:bg-gray-100 transition-all active:scale-95"
+                        type="button"
+                        onClick={() => signIn("google", { callbackUrl: "/" })}
+                        className="h-14 bg-white text-black font-bold rounded-lg flex items-center justify-center gap-3 hover:bg-gray-100 transition-all active:scale-95"
                     >
-                        Sign in with Google
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 text-sm font-black text-[#4285F4]">
+                            G
+                        </span>
+                        <span className="flex flex-col items-start leading-tight">
+                            <span>Sign in with Google</span>
+                            <span className="text-xs font-medium text-gray-500">Log in with Google</span>
+                        </span>
                     </button>
 
                     <div className="relative flex py-2 items-center">
@@ -38,9 +51,22 @@ export default function LoginPage() {
                         <div className="flex-grow border-t border-gray-800"></div>
                     </div>
 
+                    {message && (
+                        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-200">
+                            {message}
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200">
+                            {error}
+                        </div>
+                    )}
+
                     <form
                         onSubmit={async (e) => {
                             e.preventDefault();
+                            setError("");
                             const formData = new FormData(e.currentTarget);
                             const res = await signIn("credentials", {
                                 email: formData.get("email"),
@@ -49,7 +75,7 @@ export default function LoginPage() {
                             });
 
                             if (res?.error) {
-                                alert("Invalid credentials");
+                                setError("Email or password is incorrect.");
                             } else {
                                 router.push("/");
                             }
@@ -74,9 +100,16 @@ export default function LoginPage() {
                             type="submit"
                             className="h-12 bg-[#007AFF] text-white font-bold rounded-lg flex items-center justify-center hover:bg-[#0062CC] transition-all active:scale-95 mt-1"
                         >
-                            Login Access <ArrowRight className="w-4 h-4 ml-2" />
+                            Sign in with Email <ArrowRight className="w-4 h-4 ml-2" />
                         </button>
                     </form>
+
+                    <p className="text-center text-sm text-gray-500">
+                        Need an account?{" "}
+                        <Link href="/register" className="font-bold text-white hover:underline">
+                            Create account
+                        </Link>
+                    </p>
                 </div>
 
                 <p className="text-center text-[10px] text-gray-600">
