@@ -27,13 +27,34 @@ export const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
 };
 
 export const isCameraBody = (item: InventoryItem | undefined): item is InventoryItem => {
-    if (!item || item.category !== "CAM") return false;
-    if (item.subcategory === "Bodies") return true;
+    if (!item) return false;
+
+    const category = item.category.toLowerCase();
+    if (category !== "cam" && category !== "camera") return false;
+
+    const subcategory = (item.subcategory || "").toLowerCase();
+    const accessorySubcategoryKeywords = [
+        "accessory", "adapter", "battery", "batteries", "cable", "card",
+        "drive", "media", "monitor", "power", "reader", "support"
+    ];
+    if (accessorySubcategoryKeywords.some(keyword => subcategory.includes(keyword))) return false;
+
+    if (subcategory === "bodies" || subcategory.includes("body")) return true;
     if (item.id && item.id.toLowerCase().includes("body")) return true;
+
+    const cameraSubcategoryKeywords = [
+        "action", "cinema", "drone", "full frame", "gimbal camera", "large format",
+        "specialty", "super 35", "s16", "s35", "ff", "lf"
+    ];
+    if (cameraSubcategoryKeywords.some(keyword => subcategory.includes(keyword))) return true;
+
+    if (item.sensor_size || item.sensor_type || item.resolution || item.recordingFormats) return true;
+
     const name = item.name.toLowerCase();
     const bodyKeywords = [
         "sony", "venice", "arri", "alexa", "red", "komodo", "raptor", "camera", "body",
-        "blackmagic", "ursa", "fx3", "fx6", "fx9", "c70", "c300", "c500", "a7s", "a7r", "lumix", "gh5", "s1h"
+        "blackmagic", "ursa", "fx3", "fx6", "fx9", "c70", "c300", "c500", "a7s", "a7r",
+        "dji", "ronin 4d", "zenmuse x9", "lumix", "gh5", "s1h"
     ];
     return bodyKeywords.some(k => name.includes(k));
 };

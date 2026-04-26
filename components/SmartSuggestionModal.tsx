@@ -14,11 +14,10 @@ interface SmartSuggestionModalProps {
 export function SmartSuggestionModal({ isOpen, onClose, hostItem, suggestions, onConfirm }: SmartSuggestionModalProps) {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    // Pre-select all by default? Or none? Let's pre-select all for convenience.
     useEffect(() => {
         if (isOpen && suggestions.length > 0) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- reset default picks when modal opens with a new suggestion list
-            setSelectedIds(new Set(suggestions.map(s => s.id)));
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- reset optional picks when modal opens with a new suggestion list
+            setSelectedIds(new Set());
         }
     }, [isOpen, suggestions]);
 
@@ -37,6 +36,11 @@ export function SmartSuggestionModal({ isOpen, onClose, hostItem, suggestions, o
     const handleConfirm = () => {
         const selected = suggestions.filter(s => selectedIds.has(s.id));
         onConfirm(selected);
+        onClose();
+    };
+
+    const handleSkipAccessories = () => {
+        onConfirm([]);
         onClose();
     };
 
@@ -153,10 +157,10 @@ export function SmartSuggestionModal({ isOpen, onClose, hostItem, suggestions, o
                     </div>
                     <div className="flex gap-2">
                         <button
-                            onClick={onClose}
+                            onClick={handleSkipAccessories}
                             className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                         >
-                            No thanks
+                            Sadece kamerayı ekle
                         </button>
                         <button
                             onClick={handleConfirm}

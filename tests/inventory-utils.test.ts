@@ -35,6 +35,28 @@ describe("isCameraBody", () => {
 
         expect(isCameraBody(item)).toBe(true);
     });
+
+    it("returns true for technical camera records even when subcategory is not Bodies", () => {
+        const ronin = makeItem({
+            category: "CAM",
+            subcategory: "Gimbal Camera",
+            name: "DJI Ronin 4D 8K Combo",
+            resolution: "8K",
+            recordingFormats: "8K ProRes RAW HQ",
+        });
+
+        expect(isCameraBody(ronin)).toBe(true);
+    });
+
+    it("does not treat camera-category accessories as camera bodies", () => {
+        const media = makeItem({
+            category: "CAM",
+            subcategory: "Media",
+            name: "Codex Drive 1TB",
+        });
+
+        expect(isCameraBody(media)).toBe(false);
+    });
 });
 
 describe("getCropFactor", () => {

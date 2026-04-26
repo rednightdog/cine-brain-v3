@@ -4,7 +4,7 @@ import { InventoryEntry, InventoryItem } from './CineBrainInterface';
 import { Plus, X, Minus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor } from '@/lib/inventory-utils';
+import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor, getNextCameraLetter } from '@/lib/inventory-utils';
 import { Search, AlertTriangle, ShieldCheck, Check } from 'lucide-react';
 import { validateCompatibility } from '@/lib/compatibility';
 import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
@@ -297,6 +297,17 @@ export function InventoryPanel(props: InventoryPanelProps) {
             const hostModel = (hostItem.model || "").toLowerCase();
             const hostDisplayName = (hostItem.name || "").toLowerCase();
             const hostSlug = (hostItem.model || hostItem.name).toLowerCase();
+            const knownAccessoryIds = new Set(getCompatibleAccessories(hostItem.id).map(acc => acc.id));
+            const hostTokens = Array.from(new Set(
+                `${hostModel} ${hostDisplayName}`
+                    .split(/[^a-z0-9]+/i)
+                    .map(token => token.toLowerCase())
+                    .filter(token => token.length > 2)
+                    .filter(token => ![
+                        hostBrand, "camera", "cinema", "combo", "body", "full", "frame",
+                        "super", "with", "the", "and"
+                    ].includes(token))
+            ));
 
             console.log(`[SmartAdd] Detection: Host=${hostDisplayName}, Brand=${hostBrand}, Model=${hostModel}`);
 
@@ -306,33 +317,36 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
                 const lowName = (c.name || "").toLowerCase();
                 const lowBrand = (c.brand || "").toLowerCase();
+                const lowModel = (c.model || "").toLowerCase();
                 const sub = (c.subcategory || "").toLowerCase();
+                const accessoryText = `${lowName} ${lowModel} ${sub}`;
+
+                if (knownAccessoryIds.has(c.id)) return true;
 
                 // 1. Explicit Compatibility Tags (Priority 1)
                 if (c.specs_json) {
                     try {
                         const specs = typeof c.specs_json === 'string' ? JSON.parse(c.specs_json) : c.specs_json;
-                        const compatibility = specs.compatibility;
+                        const compatibility = specs.compatibility || specs.compatible_cameras || specs.compatibleCameras;
                         if (Array.isArray(compatibility)) {
                             const hasMatch = compatibility.some((tag: string) => {
                                 const lowTag = tag.toLowerCase();
-                                return hostDisplayName.includes(lowTag) || hostSlug.includes(lowTag) || lowTag === 'universal';
+                                return lowTag === '*' ||
+                                    lowTag === 'universal' ||
+                                    lowTag === hostItem.id.toLowerCase() ||
+                                    hostItem.id.toLowerCase().includes(lowTag) ||
+                                    hostDisplayName.includes(lowTag) ||
+                                    hostSlug.includes(lowTag);
                             });
                             if (hasMatch) return true;
                         }
                     } catch { }
                 }
 
-                // 2. Filters (Priority 2)
-                if (c.category === 'FLT' || c.category === 'LIT') {
-                    const isND = (sub === 'filters' || lowName.includes('filter')) && (lowName.includes('nd') || lowName.includes('neutral density'));
-                    const isPola = (sub === 'filters' || lowName.includes('filter')) && (lowName.includes('pola') || lowName.includes('polar'));
-                    return isND || isPola;
-                }
-
-                // 3. Brand Match + Key Category (Priority 3)
+                // 2. Brand Match + Host Reference (Priority 2)
                 const isAccessoryCat = ['SUP', 'COM', 'DIT', 'GRP'].includes(c.category);
                 const isBrandMatch = hostBrand.length > 2 && lowBrand.includes(hostBrand);
+                const referencesHost = hostTokens.some(token => accessoryText.includes(token));
 
                 const essentialKeywords = [
                     'cage', 'handle', 'plate', 'battery', 'media', 'card', 'reader',
@@ -342,7 +356,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 ];
                 const hasKeyword = essentialKeywords.some(kw => lowName.includes(kw) || sub.includes(kw));
 
-                return isAccessoryCat && (isBrandMatch || hasKeyword) && (isBrandMatch || lowName.includes(hostBrand) || lowName.includes(hostSlug.split(' ')[0]));
+                return isAccessoryCat && isBrandMatch && referencesHost && hasKeyword;
             }).slice(0, 15);
 
             console.log(`[SmartAdd] Suggestions found: ${suggestions.length}`);
@@ -366,11 +380,38 @@ export function InventoryPanel(props: InventoryPanelProps) {
     const processAdd = (itemsToAdd: InventoryItem[]) => {
         const primaryCam = cameraFilter !== 'ALL' ? cameraFilter : undefined;
         const otherCams = activeCameras.filter(c => c !== (primaryCam || 'A'));
+        const bodyItems = itemsToAdd.filter(i => isCameraBody(i));
+        const nonBodyItems = itemsToAdd.filter(i => !isCameraBody(i));
+
+        if (bodyItems.length > 0) {
+            const bodyCameraUnits = inventory
+                .filter(entry => isCameraBody(catalog.find(item => item.id === entry.equipmentId)))
+                .map(entry => entry.assignedCam);
+            const allocatedUnits: string[] = [];
+
+            const getTargetForBody = (preferredCam?: string) => {
+                const usedUnits = [...bodyCameraUnits, ...allocatedUnits];
+                const preferred = preferredCam?.trim().toUpperCase();
+                if (preferred && /^[A-Z]$/.test(preferred) && !usedUnits.includes(preferred)) {
+                    return preferred;
+                }
+                return getNextCameraLetter(usedUnits);
+            };
+
+            bodyItems.forEach((bodyItem, index) => {
+                const targetCam = getTargetForBody(index === 0 ? primaryCam : undefined);
+                allocatedUnits.push(targetCam);
+                onAddItem(bodyItem, targetCam);
+                nonBodyItems.forEach(item => onAddItem(item, targetCam));
+            });
+
+            setIsCatalogOpen(false);
+            return;
+        }
 
         // Bodies are never replicated. Single items or sets go through replication if other cams exist.
-        const isBody = itemsToAdd.length === 1 && isCameraBody(itemsToAdd[0]);
-        if (isBody || otherCams.length === 0) {
-            itemsToAdd.forEach(i => onAddItem(i, isCameraBody(i) ? undefined : primaryCam));
+        if (otherCams.length === 0) {
+            itemsToAdd.forEach(i => onAddItem(i, primaryCam));
             setIsCatalogOpen(false);
             return;
         }
