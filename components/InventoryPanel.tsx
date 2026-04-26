@@ -281,7 +281,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
         // Bodies are never replicated. Single items or sets go through replication if other cams exist.
         const isBody = itemsToAdd.length === 1 && isCameraBody(itemsToAdd[0]);
         if (isBody || otherCams.length === 0) {
-            itemsToAdd.forEach(i => onAddItem(i, primaryCam));
+            itemsToAdd.forEach(i => onAddItem(i, isCameraBody(i) ? undefined : primaryCam));
             setIsCatalogOpen(false);
             return;
         }
@@ -362,7 +362,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
         const res = await createCustomItemAction(payload);
         if (res.success && res.item) {
             // Optimistically add to inventory
-            onAddItem(res.item as any, cameraFilter === 'ALL' ? 'A' : cameraFilter);
+            onAddItem(res.item as any, isCameraBody(res.item as any) ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
             setIsCatalogOpen(false); // Close modal
             setIsCreatingCustom(false); // Reset mode
             setCustomForm({ brand: "", model: "", description: "", category: activeTab, subcategory: SUBCATEGORY_OPTIONS[activeTab]?.[0] || 'General' }); // Reset form

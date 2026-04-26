@@ -19,7 +19,7 @@ import { generateCineListPDF, type PDFItem } from "@/lib/pdf-generator";
 import { X, Layout, FileText, Camera, ShieldCheck, UserPlus, Users, RefreshCcw, User } from "lucide-react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
-import { isCameraBody } from "@/lib/inventory-utils";
+import { getNextCameraLetter, isCameraBody } from "@/lib/inventory-utils";
 
 // Sub Components
 import { ProjectMetadataPanel } from "./ProjectMetadataPanel";
@@ -247,22 +247,17 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
         if (!activeProjectId) return;
 
         const bodyItems = inventory.filter(i => isCameraBody(initialItems.find(c => c.id === i.equipmentId)));
+        const isBody = isCameraBody(item);
 
         // Auto-assign logic for bodies if no targetCam provided
         let camToAssign = targetCam;
-        if (!camToAssign) {
-            if (isCameraBody(item)) {
-                // Find highest current cam letter
-                const camLetters = bodyItems.map(i => i.assignedCam).filter(c => /^[A-Z]$/.test(c));
-                if (camLetters.length === 0) {
-                    camToAssign = "A";
-                } else {
-                    const maxChar = Math.max(...camLetters.map(c => c.charCodeAt(0)));
-                    camToAssign = String.fromCharCode(maxChar + 1);
-                }
-            } else {
-                camToAssign = "A";
-            }
+        if (isBody) {
+            const targetCamIsOccupied = !!camToAssign && bodyItems.some(i => i.assignedCam === camToAssign);
+            camToAssign = !targetCamIsOccupied && camToAssign
+                ? camToAssign
+                : getNextCameraLetter(bodyItems.map(i => i.assignedCam));
+        } else if (!camToAssign) {
+            camToAssign = "A";
         }
 
         startTransition(async () => {
@@ -315,6 +310,13 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     const handleQtyChange = (entryIdx: number, delta: number) => {
         const entry = inventory[entryIdx];
         if (!entry) return;
+
+        const equipment = initialItems.find(item => item.id === entry.equipmentId);
+        if (delta > 0 && isCameraBody(equipment)) {
+            handleAddEquipment(equipment);
+            return;
+        }
+
         const newQty = entry.quantity + delta;
         if (newQty <= 0) {
             handleDeleteEntry(entry.id);

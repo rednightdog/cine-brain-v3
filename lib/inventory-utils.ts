@@ -26,7 +26,7 @@ export const SUBCATEGORY_OPTIONS: Record<string, string[]> = {
     COM: ["Wireless", "Wired", "Intercom", "Accessory", "Generic"],
 };
 
-export const isCameraBody = (item: InventoryItem | undefined) => {
+export const isCameraBody = (item: InventoryItem | undefined): item is InventoryItem => {
     if (!item || item.category !== "CAM") return false;
     if (item.subcategory === "Bodies") return true;
     if (item.id && item.id.toLowerCase().includes("body")) return true;
@@ -36,6 +36,21 @@ export const isCameraBody = (item: InventoryItem | undefined) => {
         "blackmagic", "ursa", "fx3", "fx6", "fx9", "c70", "c300", "c500", "a7s", "a7r", "lumix", "gh5", "s1h"
     ];
     return bodyKeywords.some(k => name.includes(k));
+};
+
+export const getNextCameraLetter = (assignedCams: Array<string | null | undefined>) => {
+    const used = new Set(
+        assignedCams
+            .map(cam => cam?.trim().toUpperCase())
+            .filter((cam): cam is string => !!cam && /^[A-Z]$/.test(cam))
+    );
+
+    for (let code = 65; code <= 90; code += 1) {
+        const candidate = String.fromCharCode(code);
+        if (!used.has(candidate)) return candidate;
+    }
+
+    return "Z";
 };
 
 export const getCameraColor = (cam: string) => {

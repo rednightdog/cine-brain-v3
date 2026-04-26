@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getCompatibleOptions, getCropFactor, isCameraBody } from "../lib/inventory-utils";
+import { getCompatibleOptions, getCropFactor, getNextCameraLetter, isCameraBody } from "../lib/inventory-utils";
 import type { InventoryItem } from "../components/CineBrainInterface";
 
 function makeItem(overrides: Partial<InventoryItem> = {}): InventoryItem {
@@ -47,6 +47,22 @@ describe("getCropFactor", () => {
         expect(getCropFactor("S35")).toBe(1.5);
         expect(getCropFactor("micro four thirds")).toBe(2.0);
         expect(getCropFactor("Large Format")).toBe(0.9);
+    });
+});
+
+describe("getNextCameraLetter", () => {
+    it("starts with A when no camera units exist", () => {
+        expect(getNextCameraLetter([])).toBe("A");
+    });
+
+    it("returns the first free camera unit letter", () => {
+        expect(getNextCameraLetter(["A"])).toBe("B");
+        expect(getNextCameraLetter(["A", "C"])).toBe("B");
+        expect(getNextCameraLetter(["A", "B", "C"])).toBe("D");
+    });
+
+    it("ignores invalid or empty assigned camera values", () => {
+        expect(getNextCameraLetter([null, undefined, "", "ALL", "A"])).toBe("B");
     });
 });
 
