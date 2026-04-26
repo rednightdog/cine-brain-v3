@@ -3,11 +3,37 @@ export type GenericLensSetSuggestion = {
     seriesName: string;
     aperture?: string;
     focalLengths: string[];
+    mountOptions?: string[];
     source: "known" | "query" | "common";
     note?: string;
 };
 
+export type GenericLensVariantSpecs = {
+    coverage: string;
+    mount: string;
+    lens_type: string;
+    focal_length: string;
+    aperture: string;
+    weight_kg?: number;
+    front_diameter_mm?: number;
+    image_circle_mm?: number;
+    specs_json?: string;
+};
+
 const COMMON_PRIME_FOCALS = ["14", "16", "18", "21", "24", "25", "28", "32", "35", "40", "50", "65", "75", "85", "100", "135"];
+const SIMERA_C_MOUNTS = ["E-Mount", "M-Mount"];
+const SIMERA_C_SPECS: Record<string, {
+    frontDiameterMm: number;
+    filterSize: string;
+    weightE: number;
+    weightM: number;
+}> = {
+    "21": { frontDiameterMm: 67, filterSize: "M62 x 0.75", weightE: 0.491, weightM: 0.472 },
+    "28": { frontDiameterMm: 67, filterSize: "M62 x 0.75", weightE: 0.395, weightM: 0.377 },
+    "35": { frontDiameterMm: 67, filterSize: "M62 x 0.75", weightE: 0.402, weightM: 0.381 },
+    "50": { frontDiameterMm: 67, filterSize: "M62 x 0.75", weightE: 0.369, weightM: 0.353 },
+    "75": { frontDiameterMm: 72, filterSize: "M67 x 0.75", weightE: 0.453, weightM: 0.435 },
+};
 
 const KNOWN_LENS_SETS: Array<{
     patterns: string[];
@@ -38,6 +64,7 @@ export function getGenericLensSetSuggestion(query: string): GenericLensSetSugges
             seriesName: known.seriesName,
             aperture: extractAperture(query) || known.aperture,
             focalLengths: explicitFocals.length > 0 ? explicitFocals : known.focalLengths,
+            mountOptions: known.seriesName === "Simera-C" ? SIMERA_C_MOUNTS : undefined,
             source: "known",
             note: known.note,
         };
@@ -81,6 +108,35 @@ export function buildGenericLensVariantModel(
         `${focalLength}mm`,
         suggestion.aperture,
     ].filter(Boolean).join(" ");
+}
+
+export function getGenericLensVariantSpecs(
+    suggestion: GenericLensSetSuggestion,
+    focalLength: string,
+    mount: string | undefined
+): GenericLensVariantSpecs {
+    const selectedMount = normalizeLensMount(mount || suggestion.mountOptions?.[0] || "");
+    if (suggestion.seriesName.toLowerCase() === "simera-c") {
+        return buildSimeraCSpecs(focalLength, selectedMount || "E-Mount");
+    }
+
+    return {
+        coverage: "FF",
+        mount: selectedMount || "",
+        lens_type: "Spherical",
+        focal_length: `${focalLength}mm`,
+        aperture: suggestion.aperture || "",
+    };
+}
+
+export function inferKnownLensVariantSpecs(text: string, mount?: string): Partial<GenericLensVariantSpecs> {
+    const normalized = normalizeLensSetText(text);
+    if (!normalized.includes("simera c") && !normalized.includes("simera")) return {};
+
+    const focal = normalized.match(/\b(21|28|35|50|75)\s*mm\b/)?.[1];
+    if (!focal) return {};
+
+    return buildSimeraCSpecs(focal, normalizeLensMount(mount || "") || inferMountFromText(text) || "E-Mount");
 }
 
 export function normalizeLensSetText(value: string): string {
@@ -130,4 +186,49 @@ function inferSeriesName(query: string, aperture?: string): string {
 function looksLikePrimeSet(query: string): boolean {
     const normalized = normalizeLensSetText(query);
     return normalized.includes("prime") || normalized.includes("primes") || normalized.includes("lens set") || normalized.includes("cine");
+}
+
+function buildSimeraCSpecs(focalLength: string, mount: string): GenericLensVariantSpecs {
+    const focal = focalLength.replace(/mm$/i, "");
+    const spec = SIMERA_C_SPECS[focal];
+    const normalizedMount = normalizeLensMount(mount) || "E-Mount";
+    const weight = normalizedMount === "M-Mount" ? spec?.weightM : spec?.weightE;
+
+    return {
+        coverage: "FF",
+        mount: normalizedMount,
+        lens_type: "Spherical",
+        focal_length: `${focal}mm`,
+        aperture: "T1.5",
+        weight_kg: weight,
+        front_diameter_mm: spec?.frontDiameterMm,
+        image_circle_mm: 43.2,
+        specs_json: JSON.stringify({
+            source: "Thypoch Simera-C published specs",
+            source_url: "https://thypoch.com/en/simera-c",
+            t_stop_range: "T1.5-T16",
+            image_circle_mm: 43.2,
+            coverage: "Full Frame",
+            mount: normalizedMount,
+            filter_size: spec?.filterSize,
+            front_diameter_mm: spec?.frontDiameterMm,
+            weight_kg: weight,
+        }),
+    };
+}
+
+function normalizeLensMount(mount: string): string {
+    const normalized = mount.toLowerCase().replace(/\s+/g, "");
+    if (!normalized) return "";
+    if (normalized === "e" || normalized.includes("emount") || normalized === "sony-e") return "E-Mount";
+    if (normalized === "m" || normalized.includes("mmount") || normalized.includes("leicam")) return "M-Mount";
+    if (normalized === "l" || normalized.includes("lmount")) return "L-Mount";
+    return mount;
+}
+
+function inferMountFromText(text: string): string {
+    const normalized = normalizeLensSetText(text);
+    if (normalized.includes("m mount") || normalized.includes("leica m")) return "M-Mount";
+    if (normalized.includes("e mount") || normalized.includes("sony e")) return "E-Mount";
+    return "";
 }

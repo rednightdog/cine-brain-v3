@@ -2,6 +2,7 @@ import type { InventoryEntry, InventoryItem } from "@/components/CineBrainInterf
 import { validateHardwareCompatibility, validateDependencies } from "./hardware-validator";
 import { findCompatibleAdapters, Adapter } from "./adapters";
 import { getCameraRecordingProfile, normalizeSensorCoverage } from "./camera-format";
+import { getEntryInventoryItem } from "./project-custom-specs";
 
 export interface CompatibilityWarning {
     itemId?: string;
@@ -30,46 +31,54 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
 
     // Find all cameras
     const cameras = inventory.filter(e => {
-        const item = catalog.find(c => c.id === e.equipmentId);
+        const item = getEntryInventoryItem(e, catalog);
         return item?.category === 'CAM';
     });
 
     inventory.forEach(entry => {
-        const item = catalog.find(c => c.id === entry.equipmentId);
+        const item = getEntryInventoryItem(entry, catalog);
         if (!item) return;
 
         // Find assigned camera body
         const hostCam = cameras.find(c => c.assignedCam === entry.assignedCam);
-        const hostItem = hostCam ? catalog.find(c => c.id === hostCam.equipmentId) : null;
+        const hostItem = hostCam ? getEntryInventoryItem(hostCam, catalog) : null;
 
         // 1. Lens Compatibility (Mount & Sensor)
         if (hostItem && item.category === 'LNS') {
-            const hMount = (hostItem.mount || '').toUpperCase();
-            const iMount = (item.mount || '').toUpperCase();
+            const hMount = hostItem.mount || '';
+            const iMount = item.mount || '';
+            const cameraMounts = parseMountTokens(hMount);
+            const lensMounts = parseMountTokens(iMount);
 
-            if (hMount && iMount && hMount !== iMount) {
-                // 1. İmkansız durum kontrolü (Sony E lens on PL camera)
-                if (iMount === 'E-MOUNT' && hMount === 'PL') {
+            if (cameraMounts.length > 0 && lensMounts.length > 0 && !mountsOverlap(lensMounts, cameraMounts)) {
+                const adapters = lensMounts.flatMap(lensMount =>
+                    cameraMounts.flatMap(cameraMount => findCompatibleAdapters(lensMount, cameraMount))
+                );
+                const impossible = lensMounts.some(lensMount =>
+                    cameraMounts.some(cameraMount => isPhysicallyImpossibleMount(lensMount, cameraMount))
+                );
+
+                if (impossible) {
                     warnings.push({
                         itemId: entry.id,
                         message: `🚨 İMKANSIZ: Bu eşleşme fiziksel olarak mümkün değil!`,
-                        solution: "🚫 Vazgeç: Flange mesafesi çok kısa. Fiziksel adaptör imkansız. Lütfen kameranın mount yapısına uygun başka bir lens seçin.",
+                        solution: `🚫 Vazgeç: ${item.mount} lens ${hostItem.mount} kameraya basit adaptörle takılamaz. Flange mesafesi uygun değil; kameranın mount yapısına uygun başka lens/mount seçin.`,
                         type: 'MOUNT',
                         severity: 'ERROR'
                     });
                     return;
                 }
 
-                // 2. Adaptör kontrolü ve önerisi
-                const adapters = findCompatibleAdapters(iMount, hMount);
                 let solution: string | undefined = undefined;
 
-                if (iMount === 'PL' && hMount === 'E-MOUNT') {
+                if (lensMounts.includes('PL') && cameraMounts.includes('E-MOUNT')) {
                     solution = "💡 Çözüm: Envanterden bir 'PL to E-Mount Adapter' (electronic) ekleyin.";
-                } else if (iMount === 'PL' && hMount === 'RF') {
+                } else if (lensMounts.includes('PL') && cameraMounts.includes('RF')) {
                     solution = "💡 Çözüm: Envanterden bir 'PL to RF Adapter' (electronic) ekleyin.";
-                } else if (iMount === 'EF' && hMount === 'E-MOUNT') {
+                } else if (lensMounts.includes('EF') && cameraMounts.includes('E-MOUNT')) {
                     solution = "💡 Çözüm: Envanterden bir 'Sigma MC-11 or Metabones' (electronic) ekleyin.";
+                } else if (lensMounts.includes('M-MOUNT')) {
+                    solution = "💡 Çözüm: Leica M lens için kameranın mountuna uygun mekanik M adaptör ekleyin.";
                 }
 
                 if (adapters.length > 0 || solution) {
@@ -84,7 +93,7 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
                 } else {
                     warnings.push({
                         itemId: entry.id,
-                        message: `Mount Mismatch: Camera is ${hMount}, Item is ${iMount}\n(No known adapter found)`,
+                        message: `Mount Mismatch: Camera is ${hostItem.mount}, Item is ${item.mount}\n(No known adapter found)`,
                         type: 'MOUNT',
                         severity: 'ERROR'
                     });
@@ -174,6 +183,56 @@ export function validateCompatibility(inventory: InventoryEntry[], catalog: Inve
     });
 
     return warnings;
+}
+
+function parseMountTokens(raw: string): string[] {
+    if (!raw) return [];
+    const normalized = raw
+        .replace(/E-Mount/gi, "E")
+        .replace(/M-Mount/gi, "M")
+        .replace(/L-Mount/gi, "L")
+        .replace(/Mount/gi, "")
+        .split(/[\/,+|]/)
+        .map(token => normalizeMountToken(token))
+        .filter(Boolean);
+
+    return Array.from(new Set(normalized));
+}
+
+function normalizeMountToken(raw: string): string {
+    const token = raw.trim().toUpperCase().replace(/\s+/g, " ");
+    if (!token) return "";
+    if (token === "E" || token === "SONY E") return "E-MOUNT";
+    if (token === "M" || token === "LEICA M") return "M-MOUNT";
+    if (token === "L" || token === "LEICA L") return "L-MOUNT";
+    if (token === "RF" || token === "CANON RF") return "RF";
+    if (token === "EF" || token === "CANON EF") return "EF";
+    if (token === "PL") return "PL";
+    if (token === "LPL") return "LPL";
+    if (token === "DL" || token === "DJI DL") return "DL";
+    return token;
+}
+
+function mountsOverlap(lensMounts: string[], cameraMounts: string[]): boolean {
+    return lensMounts.some(lensMount => cameraMounts.includes(lensMount));
+}
+
+function isPhysicallyImpossibleMount(lensMount: string, cameraMount: string): boolean {
+    const flangeMm: Record<string, number> = {
+        "E-MOUNT": 18,
+        "L-MOUNT": 20,
+        "RF": 20,
+        "M-MOUNT": 27.8,
+        "DL": 16.84,
+        "LPL": 44,
+        "PL": 52,
+        "EF": 44,
+    };
+
+    const lensFlange = flangeMm[lensMount];
+    const cameraFlange = flangeMm[cameraMount];
+    if (!lensFlange || !cameraFlange) return false;
+    return lensFlange < cameraFlange;
 }
 
 function getLensImageCircleMm(item: InventoryItem, specs: Record<string, unknown>): number | undefined {

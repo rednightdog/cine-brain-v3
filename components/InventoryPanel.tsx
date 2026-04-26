@@ -8,8 +8,9 @@ import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor, getNextCameraL
 import { Search, AlertTriangle, ShieldCheck, Check } from 'lucide-react';
 import { validateCompatibility } from '@/lib/compatibility';
 import { matchesCatalogSearch } from '@/lib/catalog-search';
-import { buildGenericLensVariantModel, getGenericLensSetSuggestion } from '@/lib/generic-lens-set';
+import { buildGenericLensVariantModel, getGenericLensSetSuggestion, getGenericLensVariantSpecs } from '@/lib/generic-lens-set';
 import { formatLensGroupTitle, getLensSeriesName, inferLensAperture } from '@/lib/lens-series';
+import type { ProjectCustomSpecs } from '@/lib/project-custom-specs';
 import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
 import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningTooltip } from './ui/WarningBadge';
@@ -49,8 +50,14 @@ function getEntryCatalogItem(entry: InventoryEntry, catalog: InventoryItem[]): I
         category: entry.category,
         subcategory: entry.subcategory || "Generic",
         description: entry.notes || "Project-only generic item",
+        coverage: entry.coverage,
+        mount: entry.mount,
+        lens_type: entry.lens_type,
+        focal_length: entry.focal_length,
+        aperture: entry.aperture,
         weight_kg: entry.weight_kg,
         front_diameter_mm: entry.front_diameter_mm,
+        image_circle_mm: entry.image_circle_mm,
         specs_json: entry.specs_json,
         recordingFormats: entry.recordingFormats,
         isPrivate: true,
@@ -62,6 +69,18 @@ const CAMERA_GATE_OPTIONS = ["Open Gate", "Full Sensor", "16:9", "17:9", "4:3", 
 const CAMERA_RESOLUTION_OPTIONS = ["2K", "3.2K", "4K", "4.6K", "5.8K", "6K", "8K", "12K"];
 const CAMERA_ASPECT_OPTIONS = ["16:9", "17:9", "3:2", "4:3", "6:5 Anamorphic", "2.39:1"];
 const CAMERA_CODEC_OPTIONS = ["ARRIRAW", "ProRes 4444 XQ", "ProRes 422 HQ", "X-OCN XT", "X-OCN ST", "REDCODE RAW", "BRAW", "XAVC-I", "ARRICORE"];
+
+function formatNumericRange(values: Array<number | null | undefined>, suffix: string): string | null {
+    const clean = Array.from(new Set(
+        values
+            .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+            .map(value => Number(value.toFixed(3)))
+    )).sort((a, b) => a - b);
+
+    if (clean.length === 0) return null;
+    if (clean.length === 1) return `${clean[0]}${suffix}`;
+    return `${clean[0]}-${clean[clean.length - 1]}${suffix}`;
+}
 
 function CameraSetupControls({
     entry,
@@ -296,6 +315,7 @@ interface InventoryPanelProps {
         description?: string | null;
         category: string;
         subcategory?: string | null;
+        specs?: ProjectCustomSpecs;
     }, targetCam?: string) => Promise<{ success: boolean; error?: string }> | void;
     onUpdateItem: (id: string, updates: any) => void; // Used for config
     onQtyChange: (entryIdx: number, delta: number) => void;
@@ -333,6 +353,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
     const [isCreatingCustom, setIsCreatingCustom] = useState(false);
     const [isAddingGenericFromSearch, setIsAddingGenericFromSearch] = useState(false);
     const [selectedGenericLensFocals, setSelectedGenericLensFocals] = useState<string[]>([]);
+    const [selectedGenericLensMount, setSelectedGenericLensMount] = useState<string>("E-Mount");
     const [customForm, setCustomForm] = useState({
         brand: "",
         model: "",
@@ -386,7 +407,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
         }
 
         setSelectedGenericLensFocals(genericLensSetSuggestion.focalLengths);
-    }, [activeTab, searchQuery, genericLensSetSuggestion.focalLengths]);
+        setSelectedGenericLensMount(genericLensSetSuggestion.mountOptions?.[0] || "E-Mount");
+    }, [activeTab, searchQuery, genericLensSetSuggestion]);
 
     const shouldPickGenericLensFocals =
         activeTab === "LNS" &&
@@ -740,6 +762,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 description: `${genericLensSetSuggestion.note || "Project-only generic lens variant"} from search: ${model}`,
                 category: "LNS",
                 subcategory: "Prime",
+                specs: getGenericLensVariantSpecs(genericLensSetSuggestion, focalLength, selectedGenericLensMount),
             }))
             : [{
                 brand: "",
@@ -913,6 +936,13 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                 const sampleItem = getEntryCatalogItem(entries[0], catalog);
                                 const primaryAperture = inferLensAperture(sampleItem);
                                 const groupTitle = formatLensGroupTitle(brand, series, primaryAperture);
+                                const groupItems = entries.map(entry => getEntryCatalogItem(entry, catalog));
+                                const groupSpecs = [
+                                    sampleItem.coverage,
+                                    sampleItem.mount,
+                                    formatNumericRange(groupItems.map(item => item.front_diameter_mm), "mm front"),
+                                    formatNumericRange(groupItems.map(item => item.weight_kg), "kg"),
+                                ].filter(Boolean);
 
                                 return (
                                     <div key={`${assignedCam}-${brand}-${series}`} className="group flex flex-col py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7]">
@@ -932,6 +962,11 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                     <span className="text-[14px] font-semibold leading-tight text-[#1C1C1E]">
                                                         {groupTitle}
                                                     </span>
+                                                    {groupSpecs.length > 0 && (
+                                                        <span className="mt-1 text-[9px] font-bold uppercase tracking-wide text-[#8E8E93]">
+                                                            {groupSpecs.join(" • ")}
+                                                        </span>
+                                                    )}
                                                     <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
                                                         {entries.map(entry => {
                                                             const i = getEntryCatalogItem(entry, catalog);
@@ -1545,6 +1580,31 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                         );
                                                     })}
                                                 </div>
+                                                {(genericLensSetSuggestion.mountOptions || []).length > 0 && (
+                                                    <div className="mt-3">
+                                                        <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-blue-900">Lens mount</div>
+                                                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                                            {genericLensSetSuggestion.mountOptions!.map(mount => (
+                                                                <button
+                                                                    key={mount}
+                                                                    type="button"
+                                                                    onClick={() => setSelectedGenericLensMount(mount)}
+                                                                    className={cn(
+                                                                        "rounded-full border px-2.5 py-1 text-[10px] font-bold transition-all",
+                                                                        selectedGenericLensMount === mount
+                                                                            ? "border-slate-900 bg-slate-900 text-white"
+                                                                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                                                                    )}
+                                                                >
+                                                                    {mount}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        <div className="mt-1 text-[9px] font-medium text-blue-500">
+                                                            Adapter/converter warning depends on this mount.
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                         <div className="mt-3 grid grid-cols-2 gap-2">

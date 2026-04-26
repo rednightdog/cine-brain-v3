@@ -15,8 +15,14 @@ export type PDFItem = {
     assignedCam?: string;
     category?: string;
     sensor_size?: string | null;
+    coverage?: string | null;
+    mount?: string | null;
+    lens_type?: string | null;
+    focal_length?: string | null;
+    aperture?: string | null;
     weight_kg?: number | null;
     front_diameter_mm?: number | null;
+    image_circle_mm?: number | null;
     quantity?: number;
     specs_json?: string | null;
     subcategory?: string | null;
@@ -320,6 +326,8 @@ export async function generateCineListPDF(data: PDFItem[], project: ProjectData 
 
                             const specsList: string[] = [];
                             if (item.sensor_size) specsList.push(item.sensor_size.toLowerCase());
+                            if (item.coverage) specsList.push(item.coverage);
+                            if (item.mount) specsList.push(item.mount);
                             if (item.weight_kg) specsList.push(`${item.weight_kg}kg`);
                             if (item.front_diameter_mm) specsList.push(`${item.front_diameter_mm}mm`);
 

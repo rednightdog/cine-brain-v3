@@ -207,6 +207,50 @@ describe("validateCompatibility", () => {
         expect(warnings.some((w) => w.type === "SENSOR")).toBe(false);
     });
 
+    it("validates project-only custom lens technical specs", () => {
+        const cam = cameraItem({ mount: "LPL", sensor_size: "Full Frame" });
+        const customLens = entryFor(lensItem(), {
+            id: "custom-simera-21",
+            equipmentId: null,
+            name: "Thypoch Simera-C 21mm T1.5",
+            brand: "Thypoch",
+            model: "Simera-C 21mm T1.5",
+            category: "LNS",
+            subcategory: "Prime",
+            configJson: JSON.stringify({
+                customSpecs: {
+                    coverage: "FF",
+                    mount: "E-Mount",
+                    focal_length: "21mm",
+                    aperture: "T1.5",
+                    image_circle_mm: 43.2,
+                },
+            }),
+        });
+
+        const warnings = validateCompatibility(
+            [entryFor(cam), customLens],
+            [cam]
+        );
+
+        const mountWarning = warnings.find((w) => w.type === "MOUNT");
+        expect(mountWarning?.severity).toBe("ERROR");
+        expect(mountWarning?.message).toContain("İMKANSIZ");
+        expect(warnings.some((w) => w.type === "SENSOR")).toBe(false);
+    });
+
+    it("does not warn when a camera supports one of multiple lens mounts", () => {
+        const cam = cameraItem({ mount: "DL / E / L / M / PL", sensor_size: "Full Frame" });
+        const lens = lensItem({ mount: "M-Mount", coverage: "FF", image_circle_mm: 43.2 });
+
+        const warnings = validateCompatibility(
+            [entryFor(cam), entryFor(lens)],
+            [cam, lens]
+        );
+
+        expect(warnings.some((w) => w.type === "MOUNT")).toBe(false);
+    });
+
     it("includes hardware power warnings from integrated validator", () => {
         const cam = cameraItem({
             specs_json: JSON.stringify({

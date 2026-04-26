@@ -157,6 +157,45 @@ export const adapters: Adapter[] = [
         category: 'Support',
         subcategory: 'Adapter'
     },
+    {
+        id: 'adp-m-to-emount',
+        name: 'Leica M to E-Mount Adapter',
+        brand: 'Novoflex / Metabones',
+        from_mount: 'M-Mount',
+        to_mount: 'E-Mount',
+        maintains_infinity: true,
+        electronic: false,
+        notes: 'Mechanical Leica M lens adapter for Sony E-mount cameras.',
+        daily_rate_est: 25,
+        category: 'Support',
+        subcategory: 'Adapter'
+    },
+    {
+        id: 'adp-m-to-rf',
+        name: 'Leica M to RF Adapter',
+        brand: 'Kipon / Urth',
+        from_mount: 'M-Mount',
+        to_mount: 'RF',
+        maintains_infinity: true,
+        electronic: false,
+        notes: 'Mechanical Leica M lens adapter for Canon RF / RED RF-mount cameras.',
+        daily_rate_est: 25,
+        category: 'Support',
+        subcategory: 'Adapter'
+    },
+    {
+        id: 'adp-m-to-lmount',
+        name: 'Leica M to L-Mount Adapter',
+        brand: 'Leica / Novoflex',
+        from_mount: 'M-Mount',
+        to_mount: 'L-Mount',
+        maintains_infinity: true,
+        electronic: false,
+        notes: 'Mechanical Leica M lens adapter for L-mount cameras.',
+        daily_rate_est: 25,
+        category: 'Support',
+        subcategory: 'Adapter'
+    },
 
     // Anamorphic Adapters
     {

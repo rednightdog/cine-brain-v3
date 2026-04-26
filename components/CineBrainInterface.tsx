@@ -20,6 +20,7 @@ import { X, Layout, FileText, Camera, ShieldCheck, UserPlus, Users, RefreshCcw, 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getNextCameraLetter, isCameraBody } from "@/lib/inventory-utils";
+import { getEntryCustomSpecs, stringifyProjectCustomConfig, type ProjectCustomSpecs } from "@/lib/project-custom-specs";
 
 // Sub Components
 import { ProjectMetadataPanel } from "./ProjectMetadataPanel";
@@ -101,6 +102,12 @@ export type InventoryEntry = {
     front_diameter_mm?: number | null;
     specs_json?: string | null;
     recordingFormats?: string | null;
+    coverage?: string | null;
+    mount?: string | null;
+    lens_type?: string | null;
+    focal_length?: string | null;
+    aperture?: string | null;
+    image_circle_mm?: number | null;
 }
 
 export type ProjectWithItems = {
@@ -147,6 +154,7 @@ type ProjectOnlyCustomItemInput = {
     description?: string | null;
     category: string;
     subcategory?: string | null;
+    specs?: ProjectCustomSpecs;
 };
 
 type ProjectOnlyCustomItemResult = {
@@ -238,25 +246,38 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     );
 
     const inventory = useMemo(() => {
-        return optimisticItems.map((item) => ({
-            id: item.id,
-            equipmentId: item.equipmentId ?? null,
-            name: item.equipment?.name || item.customName || "Unknown",
-            brand: item.equipment?.brand || item.customBrand || "",
-            model: item.equipment?.model || item.customModel || "",
-            category: item.equipment?.category || item.customCategory || "MISC",
-            subcategory: item.equipment?.subcategory || item.customSubcategory || "",
-            assignedCam: item.assignedCam || "A",
-            quantity: item.quantity || 1,
-            notes: item.notes || item.customDescription || "",
-            configJson: item.configJson || "{}",
-            parentId: item.parentId ?? null,
-            sensor_size: item.equipment?.sensor_size,
-            weight_kg: item.equipment?.weight_kg,
-            front_diameter_mm: item.equipment?.front_diameter_mm,
-            specs_json: item.equipment?.specs_json,
-            recordingFormats: item.equipment?.recordingFormats
-        }));
+        return optimisticItems.map((item) => {
+            const baseEntry = {
+                id: item.id,
+                equipmentId: item.equipmentId ?? null,
+                name: item.equipment?.name || item.customName || "Unknown",
+                brand: item.equipment?.brand || item.customBrand || "",
+                model: item.equipment?.model || item.customModel || "",
+                category: item.equipment?.category || item.customCategory || "MISC",
+                subcategory: item.equipment?.subcategory || item.customSubcategory || "",
+                assignedCam: item.assignedCam || "A",
+                quantity: item.quantity || 1,
+                notes: item.notes || item.customDescription || "",
+                configJson: item.configJson || "{}",
+                parentId: item.parentId ?? null,
+            };
+            const customSpecs = getEntryCustomSpecs(baseEntry);
+
+            return {
+                ...baseEntry,
+                sensor_size: item.equipment?.sensor_size,
+                coverage: item.equipment?.coverage || customSpecs.coverage,
+                mount: item.equipment?.mount || customSpecs.mount,
+                lens_type: item.equipment?.lens_type || customSpecs.lens_type,
+                focal_length: item.equipment?.focal_length || customSpecs.focal_length,
+                aperture: item.equipment?.aperture || customSpecs.aperture,
+                weight_kg: item.equipment?.weight_kg ?? customSpecs.weight_kg,
+                front_diameter_mm: item.equipment?.front_diameter_mm ?? customSpecs.front_diameter_mm,
+                image_circle_mm: item.equipment?.image_circle_mm ?? customSpecs.image_circle_mm,
+                specs_json: item.equipment?.specs_json || customSpecs.specs_json,
+                recordingFormats: item.equipment?.recordingFormats
+            };
+        });
     }, [optimisticItems]);
 
     // --- ACTIONS ---
@@ -277,6 +298,15 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             category: data.category,
             subcategory: data.subcategory || "Generic",
             description: data.description || null,
+            coverage: data.specs?.coverage,
+            mount: data.specs?.mount,
+            lens_type: data.specs?.lens_type,
+            focal_length: data.specs?.focal_length,
+            aperture: data.specs?.aperture,
+            weight_kg: data.specs?.weight_kg,
+            front_diameter_mm: data.specs?.front_diameter_mm,
+            image_circle_mm: data.specs?.image_circle_mm,
+            specs_json: data.specs?.specs_json,
             isPrivate: true,
         };
 
@@ -314,11 +344,12 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                     customSubcategory: data.subcategory || "Generic",
                     assignedCam: camToAssign,
                     quantity: 1,
-                    configJson: "{}"
+                    configJson: data.specs ? stringifyProjectCustomConfig("{}", data.specs) : "{}"
                 }
             });
         });
 
+        const configJson = data.specs ? stringifyProjectCustomConfig("{}", data.specs) : "{}";
         const res = await addKitItemAction(activeProjectId, {
             customName: displayName,
             customBrand: displayBrand,
@@ -328,7 +359,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             customDescription: data.description || "",
             assignedCam: camToAssign,
             quantity: 1,
-            configJson: "{}"
+            configJson
         });
 
         if (res.success) {
@@ -440,8 +471,14 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                 assignedCam: item.assignedCam,
                 category: item.category,
                 sensor_size: item.sensor_size,
+                coverage: item.coverage,
+                mount: item.mount,
+                lens_type: item.lens_type,
+                focal_length: item.focal_length,
+                aperture: item.aperture,
                 weight_kg: item.weight_kg,
                 front_diameter_mm: item.front_diameter_mm,
+                image_circle_mm: item.image_circle_mm,
                 quantity: item.quantity,
                 specs_json: item.specs_json,
                 subcategory: item.subcategory,
