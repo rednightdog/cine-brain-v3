@@ -12,7 +12,12 @@ import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningTooltip } from './ui/WarningBadge';
 import { getCompatibleAccessories } from '@/lib/camera-accessories';
 import { getProTips } from '@/lib/pro-tips';
-import { parseCameraConfig, stringifyCameraConfig } from '@/lib/camera-format';
+import {
+    parseCameraConfig,
+    parseCameraRecordingOptions,
+    stringifyCameraConfig,
+    type CameraRecordingConfig
+} from '@/lib/camera-format';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { SmartSuggestionModal } from './SmartSuggestionModal';
 
@@ -57,19 +62,51 @@ const CAMERA_CODEC_OPTIONS = ["ARRIRAW", "ProRes 4444 XQ", "ProRes 422 HQ", "X-O
 
 function CameraSetupControls({
     entry,
+    recordingFormats,
     onUpdateItem
 }: {
     entry: InventoryEntry;
+    recordingFormats?: string | null;
     onUpdateItem: (id: string, updates: any) => void;
 }) {
     const config = parseCameraConfig(entry.configJson);
+    const recordingOptions = useMemo(
+        () => parseCameraRecordingOptions(recordingFormats),
+        [recordingFormats]
+    );
+    const selectedProfileId = recordingOptions.some(option => option.id === config.profileId)
+        ? config.profileId || ""
+        : "";
+
+    const markAsCustom = (nextConfig: CameraRecordingConfig): CameraRecordingConfig => {
+        const manualConfig: CameraRecordingConfig = { ...nextConfig };
+        delete manualConfig.profileId;
+        delete manualConfig.profileLabel;
+        delete manualConfig.maxFps;
+        delete manualConfig.recordingFormat;
+        delete manualConfig.source;
+
+        const hasManualSetup = [
+            manualConfig.sensorMode,
+            manualConfig.gateMode,
+            manualConfig.resolutionK,
+            manualConfig.aspectRatio,
+            manualConfig.codec,
+            manualConfig.dataRateMbps,
+        ].some(value => value !== undefined && value !== null && value !== "");
+
+        return {
+            ...manualConfig,
+            source: hasManualSetup ? "custom" : undefined,
+        };
+    };
 
     const updateConfig = (key: "sensorMode" | "gateMode" | "resolutionK" | "aspectRatio" | "codec", value: string) => {
         onUpdateItem(entry.id, {
-            configJson: stringifyCameraConfig({
+            configJson: stringifyCameraConfig(markAsCustom({
                 ...config,
                 [key]: value || undefined,
-            })
+            }))
         });
     };
 
@@ -77,21 +114,76 @@ function CameraSetupControls({
         const trimmed = value.trim();
         const numeric = Number(trimmed.replace(",", "."));
         onUpdateItem(entry.id, {
-            configJson: stringifyCameraConfig({
+            configJson: stringifyCameraConfig(markAsCustom({
                 ...config,
                 dataRateMbps: trimmed && Number.isFinite(numeric) && numeric > 0 ? numeric : undefined,
+            }))
+        });
+    };
+
+    const applyRecordingProfile = (profileId: string) => {
+        if (!profileId) {
+            onUpdateItem(entry.id, {
+                configJson: stringifyCameraConfig(markAsCustom(config))
+            });
+            return;
+        }
+
+        const option = recordingOptions.find(item => item.id === profileId);
+        if (!option) return;
+
+        onUpdateItem(entry.id, {
+            configJson: stringifyCameraConfig({
+                profileId: option.id,
+                profileLabel: option.label,
+                source: "verified",
+                sensorMode: option.sensorMode,
+                gateMode: option.gateMode,
+                resolutionK: option.resolutionK,
+                aspectRatio: option.aspectRatio,
+                codec: option.codec,
+                dataRateMbps: option.dataRateMbps,
+                recordingFormat: option.sourceText,
+                maxFps: option.maxFps,
             })
         });
     };
 
     return (
-        <div className="mt-2 rounded-lg border border-dashed border-[#D1D1D6] bg-[#FBFBFD] p-2">
+        <div className={cn(
+            "mt-2 rounded-lg border border-dashed bg-[#FBFBFD] p-2",
+            config.source === "verified" ? "border-emerald-300" : "border-[#D1D1D6]"
+        )}>
+            {recordingOptions.length > 0 && (
+                <div className="mb-2 grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <label className="min-w-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
+                        <span className="block text-[8px] font-bold uppercase tracking-[0.12em] text-emerald-700">
+                            Verified Camera Profile
+                        </span>
+                        <select
+                            value={selectedProfileId}
+                            onChange={(event) => applyRecordingProfile(event.target.value)}
+                            className="mt-0.5 w-full bg-transparent text-[10px] font-bold text-[#1C1C1E] outline-none"
+                        >
+                            <option value="">Custom / Approx</option>
+                            {recordingOptions.map(option => (
+                                <option key={option.id} value={option.id}>{option.label}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <span className="text-[9px] font-medium text-emerald-700">
+                        Catalog data. Manual edits become custom.
+                    </span>
+                </div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#6E6E73]">
-                    Custom / Approx Recording Setup
+                    {config.source === "verified" ? "Verified profile selected" : "Custom / Approx Recording Setup"}
                 </span>
                 <span className="text-[9px] font-medium text-[#8E8E93]">
-                    Use this for generic or unverified camera entries.
+                    {recordingOptions.length > 0
+                        ? "Override only when the exact mode is missing."
+                        : "Use this for generic or unverified camera entries."}
                 </span>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-6">
@@ -146,6 +238,8 @@ function CameraSetupSelect({
     options: string[];
     onChange: (value: string) => void;
 }) {
+    const selectableOptions = value && !options.includes(value) ? [value, ...options] : options;
+
     return (
         <label className="min-w-0 rounded-md border border-[#E5E5EA] bg-[#F9F9FB] px-2 py-1">
             <span className="block text-[8px] font-bold uppercase text-[#8E8E93]">{label}</span>
@@ -155,7 +249,7 @@ function CameraSetupSelect({
                 className="mt-0.5 w-full bg-transparent text-[10px] font-bold text-[#1C1C1E] outline-none"
             >
                 <option value="">Auto</option>
-                {options.map(option => (
+                {selectableOptions.map(option => (
                     <option key={option} value={option}>{option}</option>
                 ))}
             </select>
@@ -916,6 +1010,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                     {item.category === 'CAM' && (
                                                         <CameraSetupControls
                                                             entry={entry}
+                                                            recordingFormats={item.recordingFormats}
                                                             onUpdateItem={onUpdateItem}
                                                         />
                                                     )}

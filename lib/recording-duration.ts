@@ -1,4 +1,4 @@
-import { parseCameraConfig, type CameraRecordingConfig } from "./camera-format";
+import { parseCameraConfig, parseCameraDataRateMbps, type CameraRecordingConfig } from "./camera-format";
 
 type RecordingDurationInput = {
     cameraConfigJson?: string | null;
@@ -13,7 +13,7 @@ export type RecordingDurationEstimate = {
     capacityGb: number;
     dataRateMbps: number;
     minutes: number;
-    source: "catalog" | "custom" | "estimate";
+    source: "catalog" | "verified" | "custom" | "estimate";
     setupLabel: string;
 };
 
@@ -22,9 +22,11 @@ export function estimateRecordingDuration(input: RecordingDurationInput): Record
     if (!capacityGb) return null;
 
     const config = parseCameraConfig(input.cameraConfigJson);
-    const customDataRate = parseCustomDataRateMbps(config.dataRateMbps);
+    const configuredDataRate = parseCustomDataRateMbps(config.dataRateMbps);
+    const verifiedDataRate = config.source === "verified" ? configuredDataRate : null;
+    const customDataRate = config.source === "verified" ? null : configuredDataRate;
     const catalogDataRate = findCatalogDataRateMbps(input.cameraRecordingFormats, config);
-    const dataRate = customDataRate || catalogDataRate || estimateDataRateMbps(config);
+    const dataRate = verifiedDataRate || customDataRate || catalogDataRate || estimateDataRateMbps(config);
     if (!dataRate) return null;
 
     const quantity = Math.max(1, input.mediaQuantity || 1);
@@ -35,7 +37,7 @@ export function estimateRecordingDuration(input: RecordingDurationInput): Record
         capacityGb: totalCapacityGb,
         dataRateMbps: dataRate,
         minutes,
-        source: customDataRate ? "custom" : catalogDataRate ? "catalog" : "estimate",
+        source: verifiedDataRate ? "verified" : customDataRate ? "custom" : catalogDataRate ? "catalog" : "estimate",
         setupLabel: buildSetupLabel(config),
     };
 }
@@ -103,13 +105,13 @@ function parseRecordingFormats(recordingFormats: string | null | undefined): Arr
         const parsed: unknown = JSON.parse(recordingFormats);
         if (Array.isArray(parsed)) {
             return parsed.map(row => {
-                if (typeof row === "string") return { text: row, dataRateMbps: parseDataRateMbps(row) || undefined };
+                if (typeof row === "string") return { text: row, dataRateMbps: parseCameraDataRateMbps(row) || undefined };
                 if (typeof row === "object" && row !== null) {
                     const record = row as Record<string, unknown>;
                     const text = Object.values(record).filter(value => typeof value === "string").join(" ");
                     return {
                         text,
-                        dataRateMbps: parseDataRateMbps(String(record.data_rate || record.dataRate || text)) || undefined,
+                        dataRateMbps: parseCameraDataRateMbps(String(record.data_rate || record.dataRate || text)) || undefined,
                     };
                 }
                 return { text: String(row) };
@@ -121,19 +123,7 @@ function parseRecordingFormats(recordingFormats: string | null | undefined): Arr
         .split(/[|;\n]/)
         .map(text => text.trim())
         .filter(Boolean)
-        .map(text => ({ text, dataRateMbps: parseDataRateMbps(text) || undefined }));
-}
-
-function parseDataRateMbps(text: string): number | null {
-    const match = text.match(/(\d+(?:[.,]\d+)?)\s*(Gbps|Mbps|GB\/s|MB\/s)/i);
-    if (!match) return null;
-    const value = parseFloat(match[1].replace(",", "."));
-    const unit = match[2].toLowerCase();
-    if (unit === "gbps") return value * 1000;
-    if (unit === "mbps") return value;
-    if (unit === "gb/s") return value * 8000;
-    if (unit === "mb/s") return value * 8;
-    return null;
+        .map(text => ({ text, dataRateMbps: parseCameraDataRateMbps(text) || undefined }));
 }
 
 function parseCustomDataRateMbps(value: number | string | undefined): number | null {
@@ -142,7 +132,7 @@ function parseCustomDataRateMbps(value: number | string | undefined): number | n
     }
     if (typeof value !== "string" || value.trim().length === 0) return null;
 
-    const withUnit = parseDataRateMbps(value);
+    const withUnit = parseCameraDataRateMbps(value);
     if (withUnit) return withUnit;
 
     const numeric = Number(value.trim().replace(",", "."));
@@ -186,6 +176,8 @@ function parseResolutionK(resolutionK?: string): number {
 }
 
 function buildSetupLabel(config: CameraRecordingConfig): string {
+    if (config.profileLabel) return config.profileLabel;
+
     return [
         config.resolutionK,
         config.gateMode,

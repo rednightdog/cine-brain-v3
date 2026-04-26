@@ -53,6 +53,27 @@ describe("recording duration estimates", () => {
         expect(formatRecordingDurationEstimate(estimate!)).toContain("1TB -> 2h 47m catalog");
     });
 
+    it("labels selected verified camera profile data rates", () => {
+        const estimate = estimateRecordingDuration({
+            cameraConfigJson: JSON.stringify({
+                profileId: "profile-0-alexa-35-arriraw",
+                profileLabel: "4.6K Open Gate ARRIRAW - 2.6 Gbps",
+                source: "verified",
+                resolutionK: "4.6K",
+                gateMode: "Open Gate",
+                codec: "ARRIRAW",
+                dataRateMbps: 2600
+            }),
+            mediaName: "Codex Drive 1TB"
+        });
+
+        expect(estimate).not.toBeNull();
+        expect(estimate?.source).toBe("verified");
+        expect(estimate?.dataRateMbps).toBe(2600);
+        expect(Math.round(estimate?.minutes || 0)).toBe(51);
+        expect(formatRecordingDurationEstimate(estimate!)).toContain("1TB -> 51 min verified");
+    });
+
     it("uses custom data rate for generic camera setups", () => {
         const estimate = estimateRecordingDuration({
             cameraConfigJson: JSON.stringify({
