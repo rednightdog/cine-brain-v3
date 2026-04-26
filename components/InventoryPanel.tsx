@@ -7,6 +7,7 @@ import { twMerge } from 'tailwind-merge';
 import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor, getNextCameraLetter } from '@/lib/inventory-utils';
 import { Search, AlertTriangle, ShieldCheck, Check } from 'lucide-react';
 import { validateCompatibility } from '@/lib/compatibility';
+import { matchesCatalogSearch } from '@/lib/catalog-search';
 import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
 import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningTooltip } from './ui/WarningBadge';
@@ -693,6 +694,23 @@ export function InventoryPanel(props: InventoryPanelProps) {
         } else {
             alert(res.error || "Failed to create custom item.");
         }
+    };
+
+    const handleAddGenericFromSearch = () => {
+        const model = searchQuery.trim();
+        if (!model) return;
+
+        onAddProjectOnlyCustomItem({
+            brand: "",
+            model,
+            description: `Project-only generic line from search: ${model}`,
+            category: activeTab,
+            subcategory: "Generic",
+        }, activeTab === "CAM" ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
+
+        setIsCatalogOpen(false);
+        setIsCreatingCustom(false);
+        setSearchQuery("");
     };
 
     const handleDeleteCustom = async (id: string, e: React.MouseEvent) => {
@@ -1410,31 +1428,40 @@ export function InventoryPanel(props: InventoryPanelProps) {
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-2 space-y-4">
-                                {/* Explicit AI Research Trigger if search is active */}
+                                {/* Explicit AI Research / Generic Trigger if search is active */}
                                 {searchQuery.trim().length > 1 && (
-                                    <button
-                                        onClick={async () => {
-                                            setIsResearching(true);
-                                            const res = await researchEquipmentDraftAction(searchQuery);
-                                            setIsResearching(false);
-                                            if (res.success && res.drafts) setDraftItems(res.drafts);
-                                            else alert(res.error || "Could not research this item.");
-                                        }}
-                                        className="w-full flex items-center p-3 mb-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg active:scale-[0.99] transition-all text-left group border border-blue-100/50 hover:border-blue-200 shadow-sm"
-                                    >
-                                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-                                            <ShieldCheck className="w-4 h-4 text-blue-600" />
+                                    <div className="mb-2 rounded-lg border border-blue-100/50 bg-gradient-to-r from-blue-50 to-indigo-50 p-3 shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="font-bold text-xs text-blue-900">&quot;{searchQuery}&quot; Not in Catalog?</div>
+                                                <div className="text-[9px] text-blue-500/80 font-medium">Research it, or add a fast project-only generic line.</div>
+                                            </div>
                                         </div>
-                                        <div className="flex-1">
-                                            <div className="font-bold text-xs text-blue-900">&quot;{searchQuery}&quot; Not in Catalog?</div>
-                                            <div className="text-[9px] text-blue-500/80 font-medium">Use AI to find and add it</div>
+                                        <div className="mt-3 grid grid-cols-2 gap-2">
+                                            <button
+                                                onClick={async () => {
+                                                    setIsResearching(true);
+                                                    const res = await researchEquipmentDraftAction(searchQuery);
+                                                    setIsResearching(false);
+                                                    if (res.success && res.drafts) setDraftItems(res.drafts);
+                                                    else alert(res.error || "Could not research this item.");
+                                                }}
+                                                className="rounded-md bg-blue-600 px-3 py-2 text-[10px] font-bold text-white shadow transition-all active:scale-[0.98] disabled:opacity-60"
+                                                disabled={isResearching}
+                                            >
+                                                {isResearching ? "Researching..." : "Auto-Add"}
+                                            </button>
+                                            <button
+                                                onClick={handleAddGenericFromSearch}
+                                                className="rounded-md border border-blue-200 bg-white px-3 py-2 text-[10px] font-bold text-blue-700 shadow-sm transition-all active:scale-[0.98]"
+                                            >
+                                                Add Generic Line
+                                            </button>
                                         </div>
-                                        {isResearching ? (
-                                            <div className="h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                                        ) : (
-                                            <div className="text-white bg-blue-600 px-3 py-1 rounded text-[10px] font-bold shadow">Auto-Add</div>
-                                        )}
-                                    </button>
+                                    </div>
                                 )}
 
                                 {CATEGORIES.filter(cat => cat.id === activeTab).map(cat => {
@@ -1445,7 +1472,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                         if (i.parentId) return false;
 
                                         // SEARCH FILTER
-                                        if (searchQuery.trim() && !i.name.toLowerCase().includes(searchQuery.toLowerCase()) && !i.brand?.toLowerCase().includes(searchQuery.toLowerCase())) {
+                                        if (searchQuery.trim() && !matchesCatalogSearch(i, searchQuery)) {
                                             return false;
                                         }
 
@@ -1791,6 +1818,23 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                             </button>
                                                         )
                                                     })}
+
+                                                    {filteredItems.length === 0 && !isCreatingCustom && (
+                                                        <div className="rounded-xl border border-dashed border-[#D1D1D6] bg-white p-4 text-center">
+                                                            <div className="text-xs font-bold text-[#1C1C1E]">No catalog match yet</div>
+                                                            <div className="mt-1 text-[10px] font-medium text-[#8E8E93]">
+                                                                Add it as a project-only generic line now, then we can verify technical specs later.
+                                                            </div>
+                                                            {searchQuery.trim().length > 1 && (
+                                                                <button
+                                                                    onClick={handleAddGenericFromSearch}
+                                                                    className="mt-3 rounded-md bg-[#1C1C1E] px-4 py-2 text-[10px] font-bold text-white transition-all active:scale-[0.98]"
+                                                                >
+                                                                    Add &quot;{searchQuery.trim()}&quot; as Generic
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
