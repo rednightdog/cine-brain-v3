@@ -179,6 +179,23 @@ Guard'lı restore dry-run:
 npm run db:restore:latest:safe:dry
 ```
 
+Bir onceki backup'a donmek icin:
+
+```bash
+npm run db:restore:previous:dry
+npm run db:restore:previous
+```
+
+Tum backup listesini gormek icin:
+
+```bash
+npm run db:backups:list
+```
+
+`db:restore:latest*` komutlarinda ekstra secenekler:
+- `--offset <N>`: 0 = latest, 1 = previous, 2 = iki onceki...
+- `--list`: restore yapmadan backup listesini yazdirir
+
 En son backup dosyasını gerçek restore:
 
 ```bash

@@ -7,6 +7,8 @@ type CliOptions = {
     dryRunOnly: boolean;
     skipQuality: boolean;
     onlyCamLens: boolean;
+    listOnly: boolean;
+    backupOffset: number;
     status: "PENDING" | "APPROVED" | null;
     maxTotalChanges: number | null;
     maxInserts: number | null;
@@ -36,6 +38,11 @@ type GuardSnapshot = {
     updates: number;
 };
 
+type BackupFileEntry = {
+    name: string;
+    path: string;
+};
+
 function parseCliOptions(): CliOptions {
     const args = process.argv.slice(2);
     const options: CliOptions = {
@@ -43,6 +50,8 @@ function parseCliOptions(): CliOptions {
         dryRunOnly: false,
         skipQuality: false,
         onlyCamLens: false,
+        listOnly: false,
+        backupOffset: 0,
         status: null,
         maxTotalChanges: null,
         maxInserts: null,
@@ -69,12 +78,27 @@ function parseCliOptions(): CliOptions {
             options.onlyCamLens = true;
             continue;
         }
+        if (arg === "--list") {
+            options.listOnly = true;
+            continue;
+        }
         if (arg.startsWith("--file=")) {
             options.filePath = arg.slice("--file=".length).trim();
             continue;
         }
         if (arg === "--file") {
             options.filePath = (args[i + 1] || "").trim();
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--offset=")) {
+            const value = Number(arg.slice("--offset=".length).trim());
+            if (Number.isFinite(value) && value >= 0) options.backupOffset = Math.round(value);
+            continue;
+        }
+        if (arg === "--offset") {
+            const value = Number((args[i + 1] || "").trim());
+            if (Number.isFinite(value) && value >= 0) options.backupOffset = Math.round(value);
             i += 1;
             continue;
         }
@@ -161,10 +185,10 @@ function readImportReport(reportPath: string): ImportReport {
     }
 }
 
-function findLatestBackup(backupsDir: string): string | null {
-    if (!existsSync(backupsDir)) return null;
+function listBackupFiles(backupsDir: string): BackupFileEntry[] {
+    if (!existsSync(backupsDir)) return [];
 
-    const files = readdirSync(backupsDir)
+    const files: BackupFileEntry[] = readdirSync(backupsDir)
         .filter((name) => extname(name).toLowerCase() === ".csv")
         .map((name) => ({
             name,
@@ -172,8 +196,18 @@ function findLatestBackup(backupsDir: string): string | null {
         }))
         .sort((a, b) => b.name.localeCompare(a.name));
 
-    if (files.length === 0) return null;
-    return files[0].path;
+    return files;
+}
+
+function printBackupList(backupsDir: string, files: BackupFileEntry[]) {
+    console.log(`Backups directory: ${backupsDir}`);
+    console.log(`Total backups: ${files.length}`);
+    if (files.length === 0) return;
+    console.log("Offset | File");
+    console.log("-------|------------------------------");
+    files.forEach((file, index) => {
+        console.log(`${String(index).padStart(6)} | ${file.name}`);
+    });
 }
 
 function enforceGuards(snapshot: GuardSnapshot, options: CliOptions) {
@@ -214,10 +248,16 @@ function enforceGuards(snapshot: GuardSnapshot, options: CliOptions) {
 async function run() {
     const options = parseCliOptions();
     const backupsDir = resolve(process.cwd(), "./imports/backups");
+    const backupFiles = listBackupFiles(backupsDir);
+
+    if (options.listOnly) {
+        printBackupList(backupsDir, backupFiles);
+        return;
+    }
 
     const selectedPath = options.filePath
         ? resolve(process.cwd(), options.filePath)
-        : findLatestBackup(backupsDir);
+        : backupFiles[options.backupOffset]?.path || null;
 
     if (!selectedPath || !existsSync(selectedPath)) {
         throw new Error("Restore icin backup CSV bulunamadi. --file ile yol verebilirsin.");
