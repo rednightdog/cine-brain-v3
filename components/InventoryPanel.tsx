@@ -8,6 +8,7 @@ import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor, getNextCameraL
 import { Search, AlertTriangle, ShieldCheck, Check } from 'lucide-react';
 import { validateCompatibility } from '@/lib/compatibility';
 import { matchesCatalogSearch } from '@/lib/catalog-search';
+import { buildGenericLensVariantModel, getGenericLensSetSuggestion } from '@/lib/generic-lens-set';
 import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
 import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningTooltip } from './ui/WarningBadge';
@@ -330,6 +331,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
     // Custom Item State
     const [isCreatingCustom, setIsCreatingCustom] = useState(false);
     const [isAddingGenericFromSearch, setIsAddingGenericFromSearch] = useState(false);
+    const [selectedGenericLensFocals, setSelectedGenericLensFocals] = useState<string[]>([]);
     const [customForm, setCustomForm] = useState({
         brand: "",
         model: "",
@@ -370,6 +372,26 @@ export function InventoryPanel(props: InventoryPanelProps) {
             }));
         }
     }, [isCreatingCustom, activeTab, technicalFilter]);
+
+    const genericLensSetSuggestion = useMemo(
+        () => getGenericLensSetSuggestion(searchQuery),
+        [searchQuery]
+    );
+
+    React.useEffect(() => {
+        if (activeTab !== "LNS" || searchQuery.trim().length <= 1) {
+            setSelectedGenericLensFocals([]);
+            return;
+        }
+
+        setSelectedGenericLensFocals(genericLensSetSuggestion.focalLengths);
+    }, [activeTab, searchQuery, genericLensSetSuggestion.focalLengths]);
+
+    const shouldPickGenericLensFocals =
+        activeTab === "LNS" &&
+        searchQuery.trim().length > 1 &&
+        genericLensSetSuggestion.focalLengths.length > 0;
+    const canAddGenericFromSearch = !shouldPickGenericLensFocals || selectedGenericLensFocals.length > 0;
 
     // Filter Logic
     const sortedInventory = useMemo(() => {
@@ -705,19 +727,34 @@ export function InventoryPanel(props: InventoryPanelProps) {
         const model = searchQuery.trim();
         if (!model || isAddingGenericFromSearch) return;
 
-        setIsAddingGenericFromSearch(true);
-        try {
-            const result = await onAddProjectOnlyCustomItem({
+        const genericItems = activeTab === "LNS" && selectedGenericLensFocals.length > 0
+            ? selectedGenericLensFocals.map(focalLength => ({
+                brand: genericLensSetSuggestion.brand || "",
+                model: buildGenericLensVariantModel(genericLensSetSuggestion, focalLength),
+                description: `${genericLensSetSuggestion.note || "Project-only generic lens variant"} from search: ${model}`,
+                category: "LNS",
+                subcategory: "Prime",
+            }))
+            : [{
                 brand: "",
                 model,
                 description: `Project-only generic line from search: ${model}`,
                 category: activeTab,
                 subcategory: "Generic",
-            }, activeTab === "CAM" ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
+            }];
 
-            if (result && !result.success) {
-                alert(result.error || "Failed to add generic item.");
-                return;
+        setIsAddingGenericFromSearch(true);
+        try {
+            for (const item of genericItems) {
+                const result = await onAddProjectOnlyCustomItem(
+                    item,
+                    item.category === "CAM" ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter)
+                );
+
+                if (result && !result.success) {
+                    alert(result.error || "Failed to add generic item.");
+                    return;
+                }
             }
 
             setIsCatalogOpen(false);
@@ -726,6 +763,13 @@ export function InventoryPanel(props: InventoryPanelProps) {
         } finally {
             setIsAddingGenericFromSearch(false);
         }
+    };
+
+    const toggleGenericLensFocal = (focalLength: string) => {
+        setSelectedGenericLensFocals(prev => {
+            if (prev.includes(focalLength)) return prev.filter(value => value !== focalLength);
+            return [...prev, focalLength].sort((a, b) => Number(a) - Number(b));
+        });
     };
 
     const handleDeleteCustom = async (id: string, e: React.MouseEvent) => {
@@ -1455,6 +1499,47 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                 <div className="text-[9px] text-blue-500/80 font-medium">Research it, or add a fast project-only generic line.</div>
                                             </div>
                                         </div>
+                                        {shouldPickGenericLensFocals && (
+                                            <div className="mt-3 rounded-lg border border-blue-100 bg-white/80 p-2">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div>
+                                                        <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-blue-900">Select focal lengths</div>
+                                                        <div className="text-[9px] font-medium text-blue-500">
+                                                            {genericLensSetSuggestion.source === "known"
+                                                                ? `${genericLensSetSuggestion.brand} ${genericLensSetSuggestion.seriesName} known set`
+                                                                : "Common prime options"}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSelectedGenericLensFocals(genericLensSetSuggestion.focalLengths)}
+                                                        className="text-[9px] font-bold text-blue-700 hover:underline"
+                                                    >
+                                                        Select all
+                                                    </button>
+                                                </div>
+                                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                                    {genericLensSetSuggestion.focalLengths.map(focalLength => {
+                                                        const selected = selectedGenericLensFocals.includes(focalLength);
+                                                        return (
+                                                            <button
+                                                                key={focalLength}
+                                                                type="button"
+                                                                onClick={() => toggleGenericLensFocal(focalLength)}
+                                                                className={cn(
+                                                                    "rounded-full border px-2.5 py-1 text-[10px] font-bold transition-all",
+                                                                    selected
+                                                                        ? "border-blue-600 bg-blue-600 text-white"
+                                                                        : "border-blue-200 bg-white text-blue-700 hover:border-blue-400"
+                                                                )}
+                                                            >
+                                                                {focalLength}mm
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="mt-3 grid grid-cols-2 gap-2">
                                             <button
                                                 onClick={async () => {
@@ -1471,10 +1556,14 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                             </button>
                                             <button
                                                 onClick={handleAddGenericFromSearch}
-                                                className="rounded-md border border-blue-200 bg-white px-3 py-2 text-[10px] font-bold text-blue-700 shadow-sm transition-all active:scale-[0.98]"
-                                                disabled={isAddingGenericFromSearch}
+                                                className="rounded-md border border-blue-200 bg-white px-3 py-2 text-[10px] font-bold text-blue-700 shadow-sm transition-all active:scale-[0.98] disabled:opacity-60"
+                                                disabled={isAddingGenericFromSearch || !canAddGenericFromSearch}
                                             >
-                                                {isAddingGenericFromSearch ? "Adding..." : "Add Generic Line"}
+                                                {isAddingGenericFromSearch
+                                                    ? "Adding..."
+                                                    : shouldPickGenericLensFocals
+                                                        ? `Add ${selectedGenericLensFocals.length} Lens${selectedGenericLensFocals.length === 1 ? "" : "es"}`
+                                                        : "Add Generic Line"}
                                             </button>
                                         </div>
                                     </div>
@@ -1845,9 +1934,13 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                                 <button
                                                                     onClick={handleAddGenericFromSearch}
                                                                     className="mt-3 rounded-md bg-[#1C1C1E] px-4 py-2 text-[10px] font-bold text-white transition-all active:scale-[0.98] disabled:opacity-60"
-                                                                    disabled={isAddingGenericFromSearch}
+                                                                    disabled={isAddingGenericFromSearch || !canAddGenericFromSearch}
                                                                 >
-                                                                    {isAddingGenericFromSearch ? "Adding..." : <>Add &quot;{searchQuery.trim()}&quot; as Generic</>}
+                                                                    {isAddingGenericFromSearch
+                                                                        ? "Adding..."
+                                                                        : shouldPickGenericLensFocals
+                                                                            ? `Add ${selectedGenericLensFocals.length} selected lens${selectedGenericLensFocals.length === 1 ? "" : "es"}`
+                                                                            : <>Add &quot;{searchQuery.trim()}&quot; as Generic</>}
                                                                 </button>
                                                             )}
                                                         </div>
