@@ -9,6 +9,7 @@ import { Search, AlertTriangle, ShieldCheck, Check } from 'lucide-react';
 import { validateCompatibility } from '@/lib/compatibility';
 import { matchesCatalogSearch } from '@/lib/catalog-search';
 import { buildGenericLensVariantModel, getGenericLensSetSuggestion } from '@/lib/generic-lens-set';
+import { formatLensGroupTitle, getLensSeriesName, inferLensAperture } from '@/lib/lens-series';
 import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
 import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningTooltip } from './ui/WarningBadge';
@@ -445,7 +446,12 @@ export function InventoryPanel(props: InventoryPanelProps) {
             const item = catalog.find(i => i.id === entry.equipmentId);
 
             const brand = item?.brand || entry.brand || '';
-            const series = item?.model || entry.model || (item?.name || entry.name).replace(/\s*\d+\s*mm.*/gi, '').trim();
+            const series = getLensSeriesName({
+                brand,
+                model: item?.model || entry.model,
+                name: item?.name || entry.name,
+                aperture: item?.aperture,
+            });
             const key = `${entry.assignedCam}-${brand}-${series}`;
 
             if (!groups.has(key)) {
@@ -905,7 +911,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
                             if (itemValue.type === 'group') {
                                 const { brand, series, entries, assignedCam } = itemValue;
                                 const sampleItem = getEntryCatalogItem(entries[0], catalog);
-                                const primaryAperture = sampleItem?.aperture || sampleItem?.name.match(/[TF]\d+(\.\d+)?/i)?.[0] || '';
+                                const primaryAperture = inferLensAperture(sampleItem);
+                                const groupTitle = formatLensGroupTitle(brand, series, primaryAperture);
 
                                 return (
                                     <div key={`${assignedCam}-${brand}-${series}`} className="group flex flex-col py-3 px-4 hover:bg-[#F9F9F9] bg-white border-b border-[#F2F2F7]">
@@ -923,7 +930,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                 </button>
                                                 <div className="flex flex-col min-w-0">
                                                     <span className="text-[14px] font-semibold leading-tight text-[#1C1C1E]">
-                                                        {brand} {series} {primaryAperture}
+                                                        {groupTitle}
                                                     </span>
                                                     <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
                                                         {entries.map(entry => {
