@@ -74,6 +74,7 @@ type ProjectItem = {
     customModel?: string | null;
     customCategory?: string | null;
     customSubcategory?: string | null;
+    customDescription?: string | null;
     assignedCam?: string | null;
     quantity?: number | null;
     notes?: string | null;
@@ -138,6 +139,14 @@ type KitItemUpdatePayload = {
     quantity?: number;
     configJson?: string;
     assignedCam?: string;
+};
+
+type ProjectOnlyCustomItemInput = {
+    brand?: string | null;
+    model: string;
+    description?: string | null;
+    category: string;
+    subcategory?: string | null;
 };
 
 type OptimisticAction =
@@ -234,7 +243,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             subcategory: item.equipment?.subcategory || item.customSubcategory || "",
             assignedCam: item.assignedCam || "A",
             quantity: item.quantity || 1,
-            notes: item.notes || "",
+            notes: item.notes || item.customDescription || "",
             configJson: item.configJson || "{}",
             parentId: item.parentId ?? null,
             sensor_size: item.equipment?.sensor_size,
@@ -246,6 +255,80 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
     }, [optimisticItems]);
 
     // --- ACTIONS ---
+    const handleAddProjectOnlyCustomItem = async (data: ProjectOnlyCustomItemInput, targetCam?: string) => {
+        if (!activeProjectId) return;
+
+        const displayBrand = data.brand?.trim() || "Generic";
+        const displayModel = data.model.trim();
+        const displayName = `${displayBrand} ${displayModel}`.trim();
+        const virtualItem: InventoryItem = {
+            id: `project-custom-${crypto.randomUUID()}`,
+            name: displayName,
+            brand: displayBrand,
+            model: displayModel,
+            category: data.category,
+            subcategory: data.subcategory || "Generic",
+            description: data.description || null,
+            isPrivate: true,
+        };
+
+        const bodyItems = inventory.filter(i => isCameraBody(initialItems.find(c => c.id === i.equipmentId) || {
+            id: i.id,
+            name: i.name,
+            brand: i.brand,
+            model: i.model || "",
+            category: i.category,
+            subcategory: i.subcategory,
+        }));
+        const isBody = isCameraBody(virtualItem);
+
+        let camToAssign = targetCam;
+        if (isBody) {
+            const targetCamIsOccupied = !!camToAssign && bodyItems.some(i => i.assignedCam === camToAssign);
+            camToAssign = !targetCamIsOccupied && camToAssign
+                ? camToAssign
+                : getNextCameraLetter(bodyItems.map(i => i.assignedCam));
+        } else if (!camToAssign) {
+            camToAssign = "A";
+        }
+
+        startTransition(async () => {
+            const tempId = 'temp-' + crypto.randomUUID();
+            addOptimisticItem({
+                type: 'add',
+                payload: {
+                    id: tempId,
+                    equipmentId: null,
+                    customName: displayName,
+                    customBrand: displayBrand,
+                    customModel: displayModel,
+                    customCategory: data.category,
+                    customSubcategory: data.subcategory || "Generic",
+                    assignedCam: camToAssign,
+                    quantity: 1,
+                    configJson: "{}"
+                }
+            });
+
+            const res = await addKitItemAction(activeProjectId, {
+                customName: displayName,
+                customBrand: displayBrand,
+                customModel: displayModel,
+                customCategory: data.category,
+                customSubcategory: data.subcategory || "Generic",
+                customDescription: data.description || "",
+                assignedCam: camToAssign,
+                quantity: 1,
+                configJson: "{}"
+            });
+            if (res.success) {
+                router.refresh();
+            } else {
+                alert(res.error);
+            }
+        });
+    };
+
     const handleAddEquipment = async (item: InventoryItem, targetCam?: string) => {
         if (!activeProjectId) return;
 
@@ -507,6 +590,7 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
                                     catalog={initialItems}
                                     warnings={warnings}
                                     onAddItem={handleAddEquipment}
+                                    onAddProjectOnlyCustomItem={handleAddProjectOnlyCustomItem}
                                     onUpdateItem={handleUpdateEntry}
                                     onQtyChange={handleQtyChange}
                                     onOpenAdmin={() => setIsAdminCatalogOpen(true)}

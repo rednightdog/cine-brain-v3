@@ -29,6 +29,26 @@ function cn(...inputs: (string | undefined | null | false)[]) {
     return twMerge(clsx(inputs));
 }
 
+function getEntryCatalogItem(entry: InventoryEntry, catalog: InventoryItem[]): InventoryItem {
+    const catalogItem = catalog.find(i => i.id === entry.equipmentId);
+    if (catalogItem) return catalogItem;
+
+    return {
+        id: entry.equipmentId || entry.id,
+        name: entry.name,
+        brand: entry.brand,
+        model: entry.model || entry.name,
+        category: entry.category,
+        subcategory: entry.subcategory || "Generic",
+        description: entry.notes || "Project-only generic item",
+        weight_kg: entry.weight_kg,
+        front_diameter_mm: entry.front_diameter_mm,
+        specs_json: entry.specs_json,
+        recordingFormats: entry.recordingFormats,
+        isPrivate: true,
+    };
+}
+
 const CAMERA_SENSOR_OPTIONS = ["S16", "S35", "FF", "LF"];
 const CAMERA_GATE_OPTIONS = ["Open Gate", "Full Sensor", "16:9", "17:9", "4:3", "6:5 Anamorphic", "2.39:1"];
 const CAMERA_RESOLUTION_OPTIONS = ["2K", "3.2K", "4K", "4.6K", "5.8K", "6K", "8K", "12K"];
@@ -173,6 +193,13 @@ interface InventoryPanelProps {
     catalog: InventoryItem[];
     warnings: string[];
     onAddItem: (item: InventoryItem, targetCam?: string) => void;
+    onAddProjectOnlyCustomItem: (item: {
+        brand?: string | null;
+        model: string;
+        description?: string | null;
+        category: string;
+        subcategory?: string | null;
+    }, targetCam?: string) => void;
     onUpdateItem: (id: string, updates: any) => void; // Used for config
     onQtyChange: (entryIdx: number, delta: number) => void;
     onOpenAdmin?: () => void;
@@ -184,6 +211,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
         catalog,
         warnings,
         onAddItem,
+        onAddProjectOnlyCustomItem,
         onUpdateItem,
         onQtyChange,
         onOpenAdmin
@@ -211,7 +239,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
         model: "",
         description: "",
         category: "CAM",
-        subcategory: "Bodies"
+        subcategory: "Generic",
+        scope: "project" as "project" | "private" | "global"
     });
 
     const [isProTipsOpen, setIsProTipsOpen] = useState(false);
@@ -241,7 +270,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
             setCustomForm(prev => ({
                 ...prev,
                 category: activeTab,
-                subcategory: technicalFilter !== 'ALL' ? technicalFilter : (SUBCATEGORY_OPTIONS[activeTab]?.[0] || 'General')
+                subcategory: 'Generic'
             }));
         }
     }, [isCreatingCustom, activeTab, technicalFilter]);
@@ -252,20 +281,21 @@ export function InventoryPanel(props: InventoryPanelProps) {
             if (a.assignedCam !== b.assignedCam) return a.assignedCam.localeCompare(b.assignedCam);
             const itemA = catalog.find(i => i.id === a.equipmentId);
             const itemB = catalog.find(i => i.id === b.equipmentId);
-            const brandA = itemA?.brand?.toLowerCase() || '';
-            const brandB = itemB?.brand?.toLowerCase() || '';
+            const brandA = itemA?.brand?.toLowerCase() || a.brand.toLowerCase();
+            const brandB = itemB?.brand?.toLowerCase() || b.brand.toLowerCase();
             if (brandA !== brandB) return brandA.localeCompare(brandB);
-            const modelA = itemA?.model?.toLowerCase() || itemA?.name?.toLowerCase() || '';
-            const modelB = itemB?.model?.toLowerCase() || itemB?.name?.toLowerCase() || '';
+            const modelA = itemA?.model?.toLowerCase() || itemA?.name?.toLowerCase() || a.model?.toLowerCase() || a.name.toLowerCase();
+            const modelB = itemB?.model?.toLowerCase() || itemB?.name?.toLowerCase() || b.model?.toLowerCase() || b.name.toLowerCase();
             return modelA.localeCompare(modelB);
         }).filter(entry => {
             if (cameraFilter !== 'ALL' && entry.assignedCam !== cameraFilter) return false;
             const item = catalog.find(i => i.id === entry.equipmentId);
-            if (item?.category !== activeTab) return false;
+            const category = item?.category || entry.category;
+            if (category !== activeTab) return false;
 
             // Subcategory filtering for Support and Light in the main list
             if ((activeTab === 'SUP' || activeTab === 'LIT') && technicalFilter !== 'ALL') {
-                const sub = item.subcategory || '';
+                const sub = item?.subcategory || entry.subcategory || '';
                 if (technicalFilter === 'Filters') return sub.includes('Filter');
                 if (technicalFilter === 'Batteries') return sub.includes('Batter');
                 if (technicalFilter === 'Media') return sub.includes('Media') || sub.includes('Card');
@@ -295,15 +325,15 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
         sortedInventory.forEach(entry => {
             const item = catalog.find(i => i.id === entry.equipmentId);
-            if (!item) return;
 
-            const series = item.model || item.name.replace(/\s*\d+\s*mm.*/gi, '').trim();
-            const key = `${entry.assignedCam}-${item.brand}-${series}`;
+            const brand = item?.brand || entry.brand || '';
+            const series = item?.model || entry.model || (item?.name || entry.name).replace(/\s*\d+\s*mm.*/gi, '').trim();
+            const key = `${entry.assignedCam}-${brand}-${series}`;
 
             if (!groups.has(key)) {
                 groups.set(key, {
                     assignedCam: entry.assignedCam,
-                    brand: item.brand || '',
+                    brand,
                     series,
                     entries: []
                 });
@@ -540,14 +570,32 @@ export function InventoryPanel(props: InventoryPanelProps) {
             subcategory: customForm.subcategory
         };
 
-        const res = await createCustomItemAction(payload);
+        if (customForm.scope === "project") {
+            onAddProjectOnlyCustomItem(payload, isCameraBody({
+                id: "project-custom-preview",
+                name: `${customForm.brand || "Generic"} ${customForm.model}`,
+                brand: customForm.brand || "Generic",
+                model: customForm.model,
+                category: customForm.category,
+                subcategory: customForm.subcategory,
+            }) ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
+            setIsCatalogOpen(false);
+            setIsCreatingCustom(false);
+            setCustomForm({ brand: "", model: "", description: "", category: activeTab, subcategory: "Generic", scope: "project" });
+            return;
+        }
+
+        const res = await createCustomItemAction({ ...payload, scope: customForm.scope });
         if (res.success && res.item) {
             // Optimistically add to inventory
             onAddItem(res.item as any, isCameraBody(res.item as any) ? undefined : (cameraFilter === 'ALL' ? 'A' : cameraFilter));
             setIsCatalogOpen(false); // Close modal
             setIsCreatingCustom(false); // Reset mode
-            setCustomForm({ brand: "", model: "", description: "", category: activeTab, subcategory: SUBCATEGORY_OPTIONS[activeTab]?.[0] || 'General' }); // Reset form
+            setCustomForm({ brand: "", model: "", description: "", category: activeTab, subcategory: "Generic", scope: "project" }); // Reset form
             router.refresh(); // <--- Force refresh to update catalog
+            if (customForm.scope === "global") {
+                alert("✅ Global katalog önerisi review kuyruğuna düştü. Bu projeye de eklendi.");
+            }
         } else {
             alert(res.error || "Failed to create custom item.");
         }
@@ -685,7 +733,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                         {displayInventory.map((itemValue) => {
                             if (itemValue.type === 'group') {
                                 const { brand, series, entries, assignedCam } = itemValue;
-                                const sampleItem = catalog.find(i => i.id === entries[0].equipmentId);
+                                const sampleItem = getEntryCatalogItem(entries[0], catalog);
                                 const primaryAperture = sampleItem?.aperture || sampleItem?.name.match(/[TF]\d+(\.\d+)?/i)?.[0] || '';
 
                                 return (
@@ -708,8 +756,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                     </span>
                                                     <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
                                                         {entries.map(entry => {
-                                                            const i = catalog.find(catI => catI.id === entry.equipmentId);
-                                                            if (!i) return null;
+                                                            const i = getEntryCatalogItem(entry, catalog);
                                                             const mm = i.name.match(/\d+mm/i)?.[0];
                                                             const ap = i.aperture || i.name.match(/[TF]\d+(\.\d+)?/i)?.[0];
                                                             const isDiff = ap && ap !== primaryAperture;
@@ -757,8 +804,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                             }
 
                             const { entry } = itemValue;
-                            const item = catalog.find(i => i.id === entry.equipmentId);
-                            if (!item) return null;
+                            const item = getEntryCatalogItem(entry, catalog);
                             const masterIdx = inventory.findIndex(i => i.id === entry.id);
 
                             return (
@@ -1481,6 +1527,32 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                             </div>
                                                         </div>
 
+                                                        <div>
+                                                            <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Save Mode</label>
+                                                            <div className="grid grid-cols-1 gap-2">
+                                                                {[
+                                                                    { id: "project", label: "This project only", hint: "Fast generic line. Does not enter catalog." },
+                                                                    { id: "private", label: "My library", hint: "Reusable for your future projects." },
+                                                                    { id: "global", label: "Suggest to global catalog", hint: "Goes to review before everyone sees it." },
+                                                                ].map(option => (
+                                                                    <button
+                                                                        key={option.id}
+                                                                        type="button"
+                                                                        onClick={() => setCustomForm({ ...customForm, scope: option.id as "project" | "private" | "global" })}
+                                                                        className={cn(
+                                                                            "text-left rounded-lg border px-3 py-2 transition-all",
+                                                                            customForm.scope === option.id
+                                                                                ? "border-blue-500 bg-blue-50"
+                                                                                : "border-gray-200 bg-white hover:border-blue-200"
+                                                                        )}
+                                                                    >
+                                                                        <div className="text-[11px] font-bold text-gray-900">{option.label}</div>
+                                                                        <div className="text-[9px] font-medium text-gray-500">{option.hint}</div>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
                                                         <div className="grid grid-cols-2 gap-3">
                                                             <div>
                                                                 <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">Brand</label>
@@ -1519,7 +1591,11 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                             onClick={handleAddCustom}
                                                             disabled={!customForm.model.trim()}
                                                         >
-                                                            Create & Add to Project
+                                                            {customForm.scope === "project"
+                                                                ? "Add Generic Line"
+                                                                : customForm.scope === "private"
+                                                                    ? "Save & Add to Project"
+                                                                    : "Suggest & Add to Project"}
                                                         </button>
                                                     </div>
                                                 </div>

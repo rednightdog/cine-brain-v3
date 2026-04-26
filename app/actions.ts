@@ -24,6 +24,12 @@ type ProjectPayload = {
 type KitItemCreateInput = {
     equipmentId?: string | null;
     catalogId?: string | null;
+    customName?: string | null;
+    customBrand?: string | null;
+    customModel?: string | null;
+    customCategory?: string | null;
+    customSubcategory?: string | null;
+    customDescription?: string | null;
     assignedCam?: string;
     quantity?: number | string;
     configJson?: string;
@@ -44,6 +50,7 @@ type CustomItemInput = {
     category: string;
     subcategory?: string | null;
     description?: string | null;
+    scope?: "private" | "global";
 };
 
 function getErrorMessage(error: unknown, fallback = "Unexpected error"): string {
@@ -147,7 +154,13 @@ export async function addKitItemAction(projectId: string, data: KitItemCreateInp
         // Ensure clean data for Prisma
         const createData = {
             kitId: projectId,
-            equipmentId: data.equipmentId || data.catalogId, // Support both for now to be safe
+            equipmentId: data.equipmentId || data.catalogId || undefined, // Support both for now to be safe
+            customName: data.customName || undefined,
+            customBrand: data.customBrand || undefined,
+            customModel: data.customModel || undefined,
+            customCategory: data.customCategory || undefined,
+            customSubcategory: data.customSubcategory || undefined,
+            customDescription: data.customDescription || undefined,
             assignedCam: String(data.assignedCam || "A"), // Explicit String cast
             quantity: Number(data.quantity || 1), // Explicit Number cast
             configJson: String(data.configJson || "{}"),
@@ -812,6 +825,7 @@ export async function createCustomItemAction(data: CustomItemInput) {
         const session = await auth();
         if (!session || !session.user?.id) return { success: false, error: "Unauthorized" };
 
+        const isGlobalSuggestion = data.scope === "global";
         const newItem = await prisma.equipmentItem.create({
             data: {
                 name: data.model
@@ -823,10 +837,10 @@ export async function createCustomItemAction(data: CustomItemInput) {
                 subcategory: data.subcategory,
                 description: data.description || "Custom Item",
                 daily_rate_est: 0,
-                isPrivate: true,
+                isPrivate: !isGlobalSuggestion,
                 ownerId: session.user.id,
-                status: 'APPROVED', // Auto-approve private items
-                isVerified: true
+                status: isGlobalSuggestion ? 'PENDING' : 'APPROVED',
+                isVerified: !isGlobalSuggestion
             }
         });
 
