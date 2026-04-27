@@ -83,6 +83,8 @@ const EMPTY_CUSTOM_LENS_SPECS = {
     weight_kg: "",
 };
 
+type LensSpecsFormState = typeof EMPTY_CUSTOM_LENS_SPECS;
+
 function formatNumericRange(values: Array<number | null | undefined>, suffix: string): string | null {
     const clean = Array.from(new Set(
         values
@@ -100,6 +102,182 @@ function parseOptionalNumber(value: string): number | undefined {
     if (!trimmed) return undefined;
     const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function buildLensSpecsFromDraft(draft: LensSpecsFormState): ProjectCustomSpecs | undefined {
+    const imageCircle = parseOptionalNumber(draft.image_circle_mm);
+    const frontDiameter = parseOptionalNumber(draft.front_diameter_mm);
+    const weight = parseOptionalNumber(draft.weight_kg);
+
+    const specs: ProjectCustomSpecs = {
+        coverage: draft.coverage || undefined,
+        mount: draft.mount.trim() || undefined,
+        lens_type: draft.lens_type || undefined,
+        focal_length: draft.focal_length.trim() || undefined,
+        aperture: draft.aperture.trim() || undefined,
+        image_circle_mm: imageCircle,
+        front_diameter_mm: frontDiameter,
+        weight_kg: weight,
+    };
+
+    const cleanSpecs = Object.fromEntries(
+        Object.entries(specs).filter(([, value]) => value !== undefined && value !== null && value !== "")
+    ) as ProjectCustomSpecs;
+
+    if (Object.keys(cleanSpecs).length === 0) return undefined;
+
+    cleanSpecs.specs_json = JSON.stringify({
+        source: "User supplied custom lens specs",
+        ...cleanSpecs,
+    });
+
+    return cleanSpecs;
+}
+
+function mergeLensSpecs(
+    base: ProjectCustomSpecs | undefined,
+    override: ProjectCustomSpecs | undefined
+): ProjectCustomSpecs | undefined {
+    if (!base) return override;
+    if (!override) return base;
+
+    const { specs_json: baseSpecsJson, ...baseFields } = base;
+    const { specs_json: overrideSpecsJson, ...overrideFields } = override;
+    const merged: ProjectCustomSpecs = {
+        ...baseFields,
+        ...overrideFields,
+    };
+
+    merged.specs_json = JSON.stringify({
+        source: "Known lens specs with user overrides",
+        base_specs_json: baseSpecsJson,
+        user_specs_json: overrideSpecsJson,
+        ...merged,
+    });
+
+    return merged;
+}
+
+function LensTechnicalDataFields({
+    value,
+    onChange,
+    tone = "amber",
+}: {
+    value: LensSpecsFormState;
+    onChange: (next: LensSpecsFormState) => void;
+    tone?: "amber" | "blue";
+}) {
+    const isBlue = tone === "blue";
+    const borderClass = isBlue ? "border-blue-100" : "border-amber-200";
+    const bgClass = isBlue ? "bg-white/80" : "bg-amber-50/70";
+    const titleClass = isBlue ? "text-blue-900" : "text-amber-900";
+    const hintClass = isBlue ? "text-blue-500" : "text-amber-700";
+    const labelClass = isBlue ? "text-blue-700" : "text-amber-700";
+    const inputBorderClass = isBlue ? "border-blue-100 focus:ring-blue-500" : "border-amber-100 focus:ring-amber-500";
+
+    return (
+        <div className={cn("rounded-xl border p-3", borderClass, bgClass)}>
+            <div className="mb-3">
+                <div className={cn("text-[10px] font-black uppercase tracking-[0.14em]", titleClass)}>Lens technical data</div>
+                <div className={cn("mt-1 text-[9px] font-medium leading-relaxed", hintClass)}>
+                    Optional, but this is the data that powers coverage and adapter warnings.
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Coverage</label>
+                    <select
+                        className={cn("w-full text-xs font-bold text-gray-800 bg-white px-2 py-2 rounded border focus:outline-none focus:ring-1", inputBorderClass)}
+                        value={value.coverage}
+                        onChange={(e) => onChange({ ...value, coverage: e.target.value })}
+                    >
+                        {CUSTOM_LENS_COVERAGE_OPTIONS.map(option => (
+                            <option key={option || "unknown"} value={option}>{option || "Unknown"}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Lens type</label>
+                    <select
+                        className={cn("w-full text-xs font-bold text-gray-800 bg-white px-2 py-2 rounded border focus:outline-none focus:ring-1", inputBorderClass)}
+                        value={value.lens_type}
+                        onChange={(e) => onChange({ ...value, lens_type: e.target.value })}
+                    >
+                        {CUSTOM_LENS_TYPE_OPTIONS.map(option => (
+                            <option key={option || "unknown"} value={option}>{option || "Unknown"}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Mount</label>
+                    <input
+                        type="text"
+                        placeholder="PL, LPL, E-Mount..."
+                        className={cn("w-full text-xs font-medium px-3 py-2 rounded bg-white border focus:ring-1 outline-none", inputBorderClass)}
+                        value={value.mount}
+                        onChange={(e) => onChange({ ...value, mount: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Focal length</label>
+                    <input
+                        type="text"
+                        placeholder="35mm or 24-70mm"
+                        className={cn("w-full text-xs font-medium px-3 py-2 rounded bg-white border focus:ring-1 outline-none", inputBorderClass)}
+                        value={value.focal_length}
+                        onChange={(e) => onChange({ ...value, focal_length: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Aperture</label>
+                    <input
+                        type="text"
+                        placeholder="T1.5, T2.8..."
+                        className={cn("w-full text-xs font-medium px-3 py-2 rounded bg-white border focus:ring-1 outline-none", inputBorderClass)}
+                        value={value.aperture}
+                        onChange={(e) => onChange({ ...value, aperture: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Image circle mm</label>
+                    <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        placeholder="43.2"
+                        className={cn("w-full text-xs font-medium px-3 py-2 rounded bg-white border focus:ring-1 outline-none", inputBorderClass)}
+                        value={value.image_circle_mm}
+                        onChange={(e) => onChange({ ...value, image_circle_mm: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Front diameter mm</label>
+                    <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        placeholder="95"
+                        className={cn("w-full text-xs font-medium px-3 py-2 rounded bg-white border focus:ring-1 outline-none", inputBorderClass)}
+                        value={value.front_diameter_mm}
+                        onChange={(e) => onChange({ ...value, front_diameter_mm: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <label className={cn("text-[9px] uppercase font-bold mb-1 block", labelClass)}>Weight kg</label>
+                    <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.001"
+                        placeholder="1.2"
+                        className={cn("w-full text-xs font-medium px-3 py-2 rounded bg-white border focus:ring-1 outline-none", inputBorderClass)}
+                        value={value.weight_kg}
+                        onChange={(e) => onChange({ ...value, weight_kg: e.target.value })}
+                    />
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function CameraSetupControls({
@@ -376,6 +554,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
     const [isAddingGenericFromSearch, setIsAddingGenericFromSearch] = useState(false);
     const [selectedGenericLensFocals, setSelectedGenericLensFocals] = useState<string[]>([]);
     const [selectedGenericLensMount, setSelectedGenericLensMount] = useState<string>("E-Mount");
+    const [quickGenericLensSpecs, setQuickGenericLensSpecs] = useState(EMPTY_CUSTOM_LENS_SPECS);
     const [customForm, setCustomForm] = useState({
         brand: "",
         model: "",
@@ -427,6 +606,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
     React.useEffect(() => {
         if (activeTab !== "LNS" || searchQuery.trim().length <= 1) {
             setSelectedGenericLensFocals([]);
+            setQuickGenericLensSpecs(EMPTY_CUSTOM_LENS_SPECS);
             return;
         }
 
@@ -735,34 +915,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
 
     const buildCustomLensSpecs = (): ProjectCustomSpecs | undefined => {
         if (customForm.category !== "LNS") return undefined;
-
-        const imageCircle = parseOptionalNumber(customLensSpecs.image_circle_mm);
-        const frontDiameter = parseOptionalNumber(customLensSpecs.front_diameter_mm);
-        const weight = parseOptionalNumber(customLensSpecs.weight_kg);
-
-        const specs: ProjectCustomSpecs = {
-            coverage: customLensSpecs.coverage || undefined,
-            mount: customLensSpecs.mount.trim() || undefined,
-            lens_type: customLensSpecs.lens_type || undefined,
-            focal_length: customLensSpecs.focal_length.trim() || undefined,
-            aperture: customLensSpecs.aperture.trim() || undefined,
-            image_circle_mm: imageCircle,
-            front_diameter_mm: frontDiameter,
-            weight_kg: weight,
-        };
-
-        const cleanSpecs = Object.fromEntries(
-            Object.entries(specs).filter(([, value]) => value !== undefined && value !== null && value !== "")
-        ) as ProjectCustomSpecs;
-
-        if (Object.keys(cleanSpecs).length === 0) return undefined;
-
-        cleanSpecs.specs_json = JSON.stringify({
-            source: "User supplied custom lens specs",
-            ...cleanSpecs,
-        });
-
-        return cleanSpecs;
+        return buildLensSpecsFromDraft(customLensSpecs);
     };
 
     // Custom Item Action
@@ -817,6 +970,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
     const handleAddGenericFromSearch = async () => {
         const model = searchQuery.trim();
         if (!model || isAddingGenericFromSearch) return;
+        const quickSpecs = activeTab === "LNS" ? buildLensSpecsFromDraft(quickGenericLensSpecs) : undefined;
 
         const genericItems = activeTab === "LNS" && selectedGenericLensFocals.length > 0
             ? selectedGenericLensFocals.map(focalLength => ({
@@ -825,7 +979,10 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 description: `${genericLensSetSuggestion.note || "Project-only generic lens variant"} from search: ${model}`,
                 category: "LNS",
                 subcategory: "Prime",
-                specs: getGenericLensVariantSpecs(genericLensSetSuggestion, focalLength, selectedGenericLensMount),
+                specs: mergeLensSpecs(
+                    getGenericLensVariantSpecs(genericLensSetSuggestion, focalLength, selectedGenericLensMount),
+                    quickSpecs
+                ),
             }))
             : [{
                 brand: "",
@@ -833,6 +990,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
                 description: `Project-only generic line from search: ${model}`,
                 category: activeTab,
                 subcategory: "Generic",
+                specs: quickSpecs,
             }];
 
         setIsAddingGenericFromSearch(true);
@@ -852,6 +1010,7 @@ export function InventoryPanel(props: InventoryPanelProps) {
             setIsCatalogOpen(false);
             setIsCreatingCustom(false);
             setSearchQuery("");
+            setQuickGenericLensSpecs(EMPTY_CUSTOM_LENS_SPECS);
         } finally {
             setIsAddingGenericFromSearch(false);
         }
@@ -1700,6 +1859,15 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                 )}
                                             </div>
                                         )}
+                                        {activeTab === "LNS" && (!shouldPickGenericLensFocals || genericLensSetSuggestion.source !== "known") && (
+                                            <div className="mt-3">
+                                                <LensTechnicalDataFields
+                                                    value={quickGenericLensSpecs}
+                                                    onChange={setQuickGenericLensSpecs}
+                                                    tone="blue"
+                                                />
+                                            </div>
+                                        )}
                                         <div className="mt-3 grid grid-cols-2 gap-2">
                                             <button
                                                 onClick={async () => {
@@ -1975,107 +2143,10 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                         </div>
 
                                                         {customForm.category === "LNS" && (
-                                                            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
-                                                                <div className="mb-3">
-                                                                    <div className="text-[10px] font-black uppercase tracking-[0.14em] text-amber-900">Lens technical data</div>
-                                                                    <div className="mt-1 text-[9px] font-medium leading-relaxed text-amber-700">
-                                                                        Optional, but this is the data that powers coverage and adapter warnings.
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="grid grid-cols-2 gap-3">
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Coverage</label>
-                                                                        <select
-                                                                            className="w-full text-xs font-bold text-gray-800 bg-white px-2 py-2 rounded border border-amber-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                                                            value={customLensSpecs.coverage}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, coverage: e.target.value })}
-                                                                        >
-                                                                            {CUSTOM_LENS_COVERAGE_OPTIONS.map(option => (
-                                                                                <option key={option || "unknown"} value={option}>{option || "Unknown"}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Lens type</label>
-                                                                        <select
-                                                                            className="w-full text-xs font-bold text-gray-800 bg-white px-2 py-2 rounded border border-amber-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                                                            value={customLensSpecs.lens_type}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, lens_type: e.target.value })}
-                                                                        >
-                                                                            {CUSTOM_LENS_TYPE_OPTIONS.map(option => (
-                                                                                <option key={option || "unknown"} value={option}>{option || "Unknown"}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Mount</label>
-                                                                        <input
-                                                                            type="text"
-                                                                            placeholder="PL, LPL, E-Mount..."
-                                                                            className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-amber-100 focus:ring-1 focus:ring-amber-500 outline-none"
-                                                                            value={customLensSpecs.mount}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, mount: e.target.value })}
-                                                                        />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Focal length</label>
-                                                                        <input
-                                                                            type="text"
-                                                                            placeholder="35mm or 24-70mm"
-                                                                            className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-amber-100 focus:ring-1 focus:ring-amber-500 outline-none"
-                                                                            value={customLensSpecs.focal_length}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, focal_length: e.target.value })}
-                                                                        />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Aperture</label>
-                                                                        <input
-                                                                            type="text"
-                                                                            placeholder="T1.5, T2.8..."
-                                                                            className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-amber-100 focus:ring-1 focus:ring-amber-500 outline-none"
-                                                                            value={customLensSpecs.aperture}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, aperture: e.target.value })}
-                                                                        />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Image circle mm</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            inputMode="decimal"
-                                                                            step="0.1"
-                                                                            placeholder="43.2"
-                                                                            className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-amber-100 focus:ring-1 focus:ring-amber-500 outline-none"
-                                                                            value={customLensSpecs.image_circle_mm}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, image_circle_mm: e.target.value })}
-                                                                        />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Front diameter mm</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            inputMode="decimal"
-                                                                            step="0.1"
-                                                                            placeholder="95"
-                                                                            className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-amber-100 focus:ring-1 focus:ring-amber-500 outline-none"
-                                                                            value={customLensSpecs.front_diameter_mm}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, front_diameter_mm: e.target.value })}
-                                                                        />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[9px] uppercase font-bold text-amber-700 mb-1 block">Weight kg</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            inputMode="decimal"
-                                                                            step="0.001"
-                                                                            placeholder="1.2"
-                                                                            className="w-full text-xs font-medium px-3 py-2 rounded bg-white border border-amber-100 focus:ring-1 focus:ring-amber-500 outline-none"
-                                                                            value={customLensSpecs.weight_kg}
-                                                                            onChange={(e) => setCustomLensSpecs({ ...customLensSpecs, weight_kg: e.target.value })}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            </div>
+                                                            <LensTechnicalDataFields
+                                                                value={customLensSpecs}
+                                                                onChange={setCustomLensSpecs}
+                                                            />
                                                         )}
 
                                                         <button
