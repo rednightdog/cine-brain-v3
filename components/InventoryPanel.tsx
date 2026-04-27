@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { InventoryEntry, InventoryItem } from './CineBrainInterface';
-import { Plus, X, Minus, Trash2 } from 'lucide-react';
+import { Plus, X, Minus, Trash2, Pencil } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { CATEGORIES, isCameraBody, getCameraColor, getCropFactor, getNextCameraLetter } from '@/lib/inventory-utils';
@@ -10,7 +10,7 @@ import { validateCompatibility } from '@/lib/compatibility';
 import { matchesCatalogSearch } from '@/lib/catalog-search';
 import { buildGenericLensVariantModel, getGenericLensSetSuggestion, getGenericLensVariantSpecs } from '@/lib/generic-lens-set';
 import { formatLensGroupTitle, getLensSeriesName, inferLensAperture } from '@/lib/lens-series';
-import type { ProjectCustomSpecs } from '@/lib/project-custom-specs';
+import { stringifyProjectCustomConfig, type ProjectCustomSpecs } from '@/lib/project-custom-specs';
 import { researchEquipmentDraftAction, saveDraftsToCatalogAction, createCustomItemAction, deleteCustomItemAction } from '@/app/actions';
 import { LensGroupCard } from './ui/LensGroupCard';
 import { WarningTooltip } from './ui/WarningBadge';
@@ -40,7 +40,20 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 
 function getEntryCatalogItem(entry: InventoryEntry, catalog: InventoryItem[]): InventoryItem {
     const catalogItem = catalog.find(i => i.id === entry.equipmentId);
-    if (catalogItem) return catalogItem;
+    if (catalogItem) {
+        return {
+            ...catalogItem,
+            coverage: entry.coverage ?? catalogItem.coverage,
+            mount: entry.mount ?? catalogItem.mount,
+            lens_type: entry.lens_type ?? catalogItem.lens_type,
+            focal_length: entry.focal_length ?? catalogItem.focal_length,
+            aperture: entry.aperture ?? catalogItem.aperture,
+            weight_kg: entry.weight_kg ?? catalogItem.weight_kg,
+            front_diameter_mm: entry.front_diameter_mm ?? catalogItem.front_diameter_mm,
+            image_circle_mm: entry.image_circle_mm ?? catalogItem.image_circle_mm,
+            specs_json: entry.specs_json ?? catalogItem.specs_json,
+        };
+    }
 
     return {
         id: entry.equipmentId || entry.id,
@@ -102,6 +115,23 @@ function parseOptionalNumber(value: string): number | undefined {
     if (!trimmed) return undefined;
     const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function formatNumberInput(value: number | null | undefined): string {
+    return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function lensSpecsFormFromEntry(entry: InventoryEntry): LensSpecsFormState {
+    return {
+        coverage: entry.coverage || "",
+        mount: entry.mount || "",
+        lens_type: entry.lens_type || "",
+        focal_length: entry.focal_length || "",
+        aperture: entry.aperture || "",
+        image_circle_mm: formatNumberInput(entry.image_circle_mm),
+        front_diameter_mm: formatNumberInput(entry.front_diameter_mm),
+        weight_kg: formatNumberInput(entry.weight_kg),
+    };
 }
 
 function buildLensSpecsFromDraft(draft: LensSpecsFormState): ProjectCustomSpecs | undefined {
@@ -555,6 +585,8 @@ export function InventoryPanel(props: InventoryPanelProps) {
     const [selectedGenericLensFocals, setSelectedGenericLensFocals] = useState<string[]>([]);
     const [selectedGenericLensMount, setSelectedGenericLensMount] = useState<string>("E-Mount");
     const [quickGenericLensSpecs, setQuickGenericLensSpecs] = useState(EMPTY_CUSTOM_LENS_SPECS);
+    const [editingLensSpecsEntry, setEditingLensSpecsEntry] = useState<InventoryEntry | null>(null);
+    const [editingLensSpecs, setEditingLensSpecs] = useState(EMPTY_CUSTOM_LENS_SPECS);
     const [customForm, setCustomForm] = useState({
         brand: "",
         model: "",
@@ -1040,6 +1072,21 @@ export function InventoryPanel(props: InventoryPanelProps) {
         entries.forEach(entry => onRemoveItem(entry.id));
     };
 
+    const openLensSpecsEditor = (entry: InventoryEntry) => {
+        setEditingLensSpecsEntry(entry);
+        setEditingLensSpecs(lensSpecsFormFromEntry(entry));
+    };
+
+    const handleSaveLensSpecsOverride = () => {
+        if (!editingLensSpecsEntry) return;
+        const specs = buildLensSpecsFromDraft(editingLensSpecs) || {};
+        onUpdateItem(editingLensSpecsEntry.id, {
+            configJson: stringifyProjectCustomConfig(editingLensSpecsEntry.configJson, specs)
+        });
+        setEditingLensSpecsEntry(null);
+        setEditingLensSpecs(EMPTY_CUSTOM_LENS_SPECS);
+    };
+
     const handleDeleteCustom = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!confirm("Are you sure you want to delete this custom item from the global catalog?")) return;
@@ -1229,6 +1276,20 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                                                             {mm}{isDiff ? ` (${ap})` : ''}
                                                                             {entry.quantity > 1 && <span className="ml-1 text-[#007AFF]">x{entry.quantity}</span>}
                                                                         </span>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                openLensSpecsEditor(entry);
+                                                                            }}
+                                                                            className={cn(
+                                                                                "transition-colors ml-0.5",
+                                                                                hasWarning ? "text-red-400 hover:text-blue-700" : "text-[#8E8E93] hover:text-blue-600"
+                                                                            )}
+                                                                            title="Edit lens specs for this project"
+                                                                            aria-label={`Edit specs for ${mm || entry.name}`}
+                                                                        >
+                                                                            <Pencil className="w-2.5 h-2.5" />
+                                                                        </button>
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
@@ -1493,6 +1554,16 @@ export function InventoryPanel(props: InventoryPanelProps) {
                                         </div>
 
                                         <div className="flex items-center gap-2 shrink-0">
+                                            {item.category === 'LNS' && (
+                                                <button
+                                                    onClick={() => openLensSpecsEditor(entry)}
+                                                    className="p-2 hover:bg-blue-50 rounded-full transition-all text-[#C7C7CC] hover:text-blue-600"
+                                                    title="Edit lens specs for this project"
+                                                    aria-label={`Edit specs for ${item.name}`}
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </button>
+                                            )}
                                             {/* Action Pills */}
                                             <div className="flex items-center bg-[#F2F2F7] rounded-[10px] p-0.5 h-8">
                                                 <button
@@ -1651,6 +1722,49 @@ export function InventoryPanel(props: InventoryPanelProps) {
                     + Add Item
                 </button>
             </div >
+
+            {editingLensSpecsEntry && (
+                <div className="absolute inset-0 z-[55] flex items-end justify-center bg-[#1A1A1A]/35 backdrop-blur-[2px] animate-in fade-in">
+                    <div className="w-full max-w-xl rounded-t-[24px] bg-white p-4 shadow-2xl animate-in slide-in-from-bottom duration-200">
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[#8E8E93]">Project lens override</div>
+                                <h3 className="mt-1 text-base font-bold text-[#1C1C1E]">{editingLensSpecsEntry.name}</h3>
+                                <p className="mt-1 text-[10px] font-medium leading-relaxed text-[#8E8E93]">
+                                    Saves only on this project row. Catalog/global equipment data stays untouched.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setEditingLensSpecsEntry(null)}
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#8E8E93] transition-colors hover:bg-[#E5E5EA] hover:text-[#1C1C1E]"
+                                aria-label="Close lens specs editor"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <LensTechnicalDataFields
+                            value={editingLensSpecs}
+                            onChange={setEditingLensSpecs}
+                        />
+
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                                onClick={() => setEditingLensSpecsEntry(null)}
+                                className="rounded-xl border border-[#E5E5EA] bg-white px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-[#8E8E93] transition-colors hover:bg-[#F2F2F7]"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveLensSpecsOverride}
+                                className="rounded-xl bg-[#1C1C1E] px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-white transition-colors hover:bg-black"
+                            >
+                                Save Project Specs
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Catalog Modal (Ported) */}
             {

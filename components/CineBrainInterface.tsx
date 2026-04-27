@@ -266,15 +266,15 @@ export default function CineBrainInterface({ initialItems, initialProjects, sess
             return {
                 ...baseEntry,
                 sensor_size: item.equipment?.sensor_size,
-                coverage: item.equipment?.coverage || customSpecs.coverage,
-                mount: item.equipment?.mount || customSpecs.mount,
-                lens_type: item.equipment?.lens_type || customSpecs.lens_type,
-                focal_length: item.equipment?.focal_length || customSpecs.focal_length,
-                aperture: item.equipment?.aperture || customSpecs.aperture,
-                weight_kg: item.equipment?.weight_kg ?? customSpecs.weight_kg,
-                front_diameter_mm: item.equipment?.front_diameter_mm ?? customSpecs.front_diameter_mm,
-                image_circle_mm: item.equipment?.image_circle_mm ?? customSpecs.image_circle_mm,
-                specs_json: item.equipment?.specs_json || customSpecs.specs_json,
+                coverage: customSpecs.coverage ?? item.equipment?.coverage,
+                mount: customSpecs.mount ?? item.equipment?.mount,
+                lens_type: customSpecs.lens_type ?? item.equipment?.lens_type,
+                focal_length: customSpecs.focal_length ?? item.equipment?.focal_length,
+                aperture: customSpecs.aperture ?? item.equipment?.aperture,
+                weight_kg: customSpecs.weight_kg ?? item.equipment?.weight_kg,
+                front_diameter_mm: customSpecs.front_diameter_mm ?? item.equipment?.front_diameter_mm,
+                image_circle_mm: customSpecs.image_circle_mm ?? item.equipment?.image_circle_mm,
+                specs_json: customSpecs.specs_json ?? item.equipment?.specs_json,
                 recordingFormats: item.equipment?.recordingFormats
             };
         });

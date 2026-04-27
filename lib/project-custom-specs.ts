@@ -61,11 +61,24 @@ export function getEntryCustomSpecs(entry: Pick<InventoryEntry, "configJson" | "
 
 export function getEntryInventoryItem(entry: InventoryEntry, catalog: InventoryItem[]): InventoryItem | null {
     const catalogItem = catalog.find(item => item.id === entry.equipmentId);
-    if (catalogItem) return catalogItem;
+    const customSpecs = getEntryCustomSpecs(entry);
+    if (catalogItem) {
+        return {
+            ...catalogItem,
+            coverage: customSpecs.coverage ?? catalogItem.coverage,
+            mount: customSpecs.mount ?? catalogItem.mount,
+            lens_type: customSpecs.lens_type ?? catalogItem.lens_type,
+            focal_length: customSpecs.focal_length ?? catalogItem.focal_length,
+            aperture: customSpecs.aperture ?? catalogItem.aperture,
+            weight_kg: customSpecs.weight_kg ?? catalogItem.weight_kg,
+            front_diameter_mm: customSpecs.front_diameter_mm ?? catalogItem.front_diameter_mm,
+            image_circle_mm: customSpecs.image_circle_mm ?? catalogItem.image_circle_mm,
+            specs_json: customSpecs.specs_json ?? catalogItem.specs_json,
+        };
+    }
 
     if (entry.equipmentId) return null;
 
-    const customSpecs = getEntryCustomSpecs(entry);
     return {
         id: entry.id,
         name: entry.name,

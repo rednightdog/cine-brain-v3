@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
     getEntryCustomSpecs,
+    getEntryInventoryItem,
     stringifyProjectCustomConfig,
 } from "../lib/project-custom-specs";
 
@@ -45,6 +46,45 @@ describe("project custom specs", () => {
             aperture: "T1.5",
             weight_kg: 0.369,
             front_diameter_mm: 67,
+        });
+    });
+
+    it("uses project custom specs as overrides over catalog specs", () => {
+        const configJson = stringifyProjectCustomConfig("{}", {
+            coverage: "FF",
+            mount: "E-Mount",
+            image_circle_mm: 43.2,
+        });
+        const item = getEntryInventoryItem({
+            id: "kit-item-1",
+            equipmentId: "catalog-lens-1",
+            name: "Catalog Lens",
+            brand: "Brand",
+            model: "Catalog Lens",
+            category: "LNS",
+            subcategory: "Prime",
+            assignedCam: "A",
+            quantity: 1,
+            notes: "",
+            configJson,
+            parentId: null,
+        }, [{
+            id: "catalog-lens-1",
+            name: "Catalog Lens",
+            brand: "Brand",
+            model: "Catalog Lens",
+            category: "LNS",
+            subcategory: "Prime",
+            description: "",
+            coverage: "S35",
+            mount: "PL",
+            image_circle_mm: 31,
+        }]);
+
+        expect(item).toMatchObject({
+            coverage: "FF",
+            mount: "E-Mount",
+            image_circle_mm: 43.2,
         });
     });
 });
